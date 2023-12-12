@@ -1,0 +1,318 @@
+source("WMWA.R")
+
+
+ex_new = readRDS('ex_new.rds') #count data, 1410*60
+
+
+# Res = list()
+
+
+sig_score = 0.05
+result = readRDS("WMWAresult.rds")
+
+
+require("SIBER")
+z_generateNBM <- function(comb_xy, n){
+  
+  if (all(comb_xy==comb_xy[1])){
+    f = rep(comb_xy, 5)
+  }else{
+    f = tryCatch({
+      fitNB(comb_xy)
+      
+    },error = function(e){
+      rep(comb_xy, 5)
+    })
+  }
+  
+  if (length(f)==7 & all(as.data.frame(is.na(f))==FALSE)){
+    samp=f[5]*rnbinom(n, size=1/(f[3]), mu=f[1]) + (1-f[5])*rnbinom(n, size=1/(f[4]), mu=f[2])
+  }else{
+    samp=rep(comb_xy, 5)
+  }
+  
+  return(samp)
+}
+
+
+# mixture normal distribution
+z_generateNM <- function(comb_xy, n){
+  
+  if (all(comb_xy==comb_xy[1])){
+    f = rep(comb_xy, 5)
+  }else{
+    f = tryCatch({
+      fitNL(comb_xy)
+      
+    },error = function(e){
+      rep(comb_xy, 5)
+    })
+  }
+
+  if (length(f)==7 & all(as.data.frame(is.na(f))==FALSE)){
+    samp=f[5]*rnorm(n, f[1], f[3]) + (1-f[5])*rnorm(n, f[2], f[4])
+  }else{
+    samp=rep(comb_xy, 5)
+  }
+  
+  return(samp)
+}
+
+
+# mixture log normal distribution
+z_generateLNM <- function(comb_xy, n){
+  
+  if (all(comb_xy==comb_xy[1])){
+    f = rep(comb_xy, 5)
+  }else{
+    f = tryCatch({
+      fitLN(comb_xy)
+      
+    },error = function(e){
+      rep(comb_xy, 5)
+    })
+  }
+  
+  if (length(f)==7 & all(as.data.frame(is.na(f))==FALSE)){
+    samp=f[5]*rlnorm(n, f[1], f[3]) + (1-f[5])*rlnorm(n, f[2], f[4])
+  }else{
+    samp=rep(comb_xy, 5)
+  }
+  
+  return(samp)
+}
+
+
+library("MASS")
+# normal distribution
+z_generateN <- function(comb_xy, n){
+  
+  if (all(comb_xy==comb_xy[1])){
+    f = rep(comb_xy, 5)
+  }else{
+    f = tryCatch({
+      fitdistr(comb_xy,'normal')
+      
+    },error = function(e){
+      rep(comb_xy, 5)
+    })
+  }
+  
+  
+  if (length(f)==n){
+    samp=f
+  }else{
+    samp=rnorm(n, f[["estimate"]][["mean"]], f[["estimate"]][["sd"]]) 
+  }
+  
+  return(samp)
+}
+
+
+# lognormal distribution
+z_generateLN <- function(comb_xy, n){
+  
+  if (all(comb_xy==comb_xy[1])){
+    f = rep(comb_xy, 5)
+  }else{
+    f = tryCatch({
+      fitdistr(comb_xy,'lognormal')
+      
+    },error = function(e){
+      rep(comb_xy, 5)
+    })
+  }
+
+  
+  if (length(f)==n){
+    samp=f
+  }else{
+    samp=rlnorm(n, f[["estimate"]][["meanlog"]], f[["estimate"]][["sdlog"]]) 
+  }
+  
+  return(samp)
+}
+
+
+z_generateNB <- function(comb_xy, n){
+  
+  if (all(comb_xy==comb_xy[1])){
+    f = rep(comb_xy, 5)
+  }else{
+    f = tryCatch({
+      fitdistr(comb_xy,'negative binomial')
+      
+    },error = function(e){
+      rep(comb_xy, 5)
+    })
+  }
+  
+  
+  if (length(f)==n){
+    samp=f
+  }else{
+    samp = rnbinom(n,size=f[["estimate"]][["size"]],mu=f[["estimate"]][["mu"]])
+  }
+  
+  return(samp)
+}
+
+
+# require("mixR")
+# # normal distribution
+# z_generateNL <- function(comb_xy, n){
+#   f=mixfit(comb_xy, ncomp=2, family="norm")
+#   samp=f$pi[1]*rnorm(n, f$mu[1], f$sd[1]) + f$pi[2]*rnorm(n, f$mu[2], f$sd[2])
+#   return(samp)
+# }
+# 
+# 
+# require("mixR")
+# # log normal distribution
+# z_generateLN <- function(comb_xy, n){
+#   f=mixfit(comb_xy, ncomp=2, family="lnorm")
+#   samp=f$pi[1]*rlnorm(n, f$mulog[1], f$sdlog[1]) + f$pi[2]*rlnorm(n, f$mulog[2], f$sdlog[2])
+#   return(samp)
+# }
+
+num= 100
+
+for (t in 44:num){
+  
+  
+  
+  # file=paste0("./count_result/degene",id,".rds")
+  # DE = readRDS(file)
+  
+  
+
+  
+  result$Res$WMWAN[[t]] = list()
+  result$Res$WMWALN[[t]] = list()
+  result$Res$WMWANM[[t]] = list()
+  result$Res$WMWALNM[[t]] = list()
+  result$Res$WMWANB[[t]] = list()
+  result$Res$WMWANBM[[t]] = list()
+  result$Res$WMWAreal[[t]] = list()
+  
+  
+  
+  n1=c(5,5,5,5,10,15,20,25)
+  n2=c(5,10,15,20,10,15,20,25)
+  #length(n1)
+  for (j in 1:length(n1)){
+    sel_1 = sample(1:623,n1[j],replace=FALSE)#sample(1:dim(casesamples)[2],n1[j])
+    sel_2 = 623+sample(1:691,n2[j],replace=FALSE)#dim(casesamples)[2]+sample(1:dim(contsamples)[2],n2[j])
+    sel = c(sel_1,sel_2)
+    ex = ex_new[,sel]
+    ex_xy = apply(ex, 2, as.numeric)
+    sml <- c(rep(0,n1[j]),rep(1,n2[j]))
+    sml = as.character(sml)
+    gs <- factor(sml)
+    
+    n_xy = length(sel)
+    n_z = 5 * n_xy
+    
+    ####################################################################################
+    
+    ex_z1 = apply(ex_xy, 1, z_generateN, n=n_z)
+    ex_z1[which(is.na(ex_z1))]=0
+    ex = cbind(ex_xy, t(ex_z1))
+    N = dim(ex)[2]
+    
+    Res_WMWAN = apply(ex, 1, wmwa, m=n1[j], n=n2[j], N=N, nperm=1000)
+    Res_WMWAN=as.vector(Res_WMWAN)
+    result$Res$WMWAN[[t]][[j]] = Res_WMWAN
+    
+    ####################################################################################
+    
+    ex_xy_tmp = log10(ex_xy+1)
+    ex_z2 = apply(ex_xy_tmp, 1, z_generateN, n=n_z)
+    ex_z2[which(is.na(ex_z2))]=0
+    ex = cbind(ex_xy_tmp, t(ex_z2))
+    # ex_z2 = apply(ex_xy, 1, z_generateLN, n=n_z)
+    # ex_z2[which(is.na(ex_z2))]=0
+    # ex = cbind(ex_xy, t(ex_z2))
+    N = dim(ex)[2]
+    
+    Res_WMWALN = apply(ex, 1, wmwa, m=n1[j], n=n2[j], N=N, nperm=1000)
+    Res_WMWALN=as.vector(Res_WMWALN)
+    result$Res$WMWALN[[t]][[j]] = Res_WMWALN
+    
+    ####################################################################################
+    
+    ex_z3 = apply(ex_xy, 1, z_generateNM, n=n_z)
+    ex_z3[which(is.na(ex_z3))]=0
+    ex = cbind(ex_xy, t(ex_z3))
+    N = dim(ex)[2]
+    
+    Res_WMWANM = apply(ex, 1, wmwa, m=n1[j], n=n2[j], N=N, nperm=1000)
+    Res_WMWANM=as.vector(Res_WMWANM)
+    result$Res$WMWANM[[t]][[j]] = Res_WMWANM
+    
+    ####################################################################################
+    
+    ex_z4 = apply(ex_xy, 1, z_generateLNM, n=n_z)
+    ex_z4[which(is.na(ex_z4))]=0
+    ex = cbind(ex_xy, t(ex_z4))
+    N = dim(ex)[2]
+    
+    Res_WMWALNM = apply(ex, 1, wmwa, m=n1[j], n=n2[j], N=N, nperm=1000)
+    Res_WMWALNM=as.vector(Res_WMWALNM)
+    result$Res$WMWALNM[[t]][[j]] = Res_WMWALNM
+    
+    
+    
+    ####################################################################################
+    
+    ex_z5 = apply(ex_xy, 1, z_generateNB, n=n_z)
+    ex_z5[which(is.na(ex_z5))]=0
+    ex = cbind(ex_xy, t(ex_z5))
+    N = dim(ex)[2]
+    
+    Res_WMWANB = apply(ex, 1, wmwa, m=n1[j], n=n2[j], N=N, nperm=1000)
+    Res_WMWANB = as.vector(Res_WMWANB)
+    result$Res$WMWANB[[t]][[j]] = Res_WMWANB
+    
+    ####################################################################################
+    
+    
+    ex_z6 = apply(ex_xy, 1, z_generateNBM, n=n_z)
+    ex_z6[which(is.na(ex_z6))]=0
+    ex = cbind(ex_xy, t(ex_z6))
+    N = dim(ex)[2]
+    
+    Res_WMWANBM = apply(ex, 1, wmwa, m=n1[j], n=n2[j], N=N, nperm=1000)
+    Res_WMWANBM=as.vector(Res_WMWANBM)
+    result$Res$WMWANBM[[t]][[j]] = Res_WMWANBM
+    
+    
+    
+    ####################################################################################
+    left = setdiff(1:dim(ex_new)[2], sel)
+    sel_z = sample(left, n_z, replace = FALSE)
+    ex_z7 = ex_new[,sel_z]
+    ex_z7[which(is.na(ex_z7))]=0
+    ex = cbind(ex_xy, ex_z7)
+    N = dim(ex)[2]
+    
+    Res_WMWAreal = apply(ex, 1, wmwa, m=n1[j], n=n2[j], N=N, nperm=1000)
+    Res_WMWAreal = as.vector(Res_WMWAreal)
+    result$Res$WMWAreal[[t]][[j]] = Res_WMWAreal
+    
+    ####################################################################################
+   
+    
+  
+  }
+  
+  # DE=list(DE_gene=DE_gene,UNDE_gene=UNDE_gene)
+  # saveRDS(DE,'degene9.rds')
+  
+  # result = list(rate=rate, auc=auc)
+  saveRDS(result,"WMWAresult.rds")
+  
+}
+
+
+

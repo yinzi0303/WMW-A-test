@@ -1,0 +1,93 @@
+library(DOSE)
+library(org.Hs.eg.db)
+library(topGO)
+library(clusterProfiler)
+library(pathview)
+
+setwd("C:/Users/dell/Desktop/wmwa/Z/lunwen_1g/app/GSE185657")
+keytypes(org.Hs.eg.db) 
+data(geneList, package="DOSE")
+ref = read.csv("sars-cov-2_targets.csv")
+
+result_my = readRDS("WMWAresult_185657.rds")
+Res_WMWANBM = result_my[["Res"]][["WMWANBM"]][[2]]
+Res_WMWANBM[which(Res_WMWANBM==0)]=1e-4
+id = readRDS("genesymbol.rds")
+
+# data(geneList, package="DOSE")
+# data <- id[which(Res_WMWANBM<0.05),1]
+# data <- as.character(data)
+# test2 = bitr(data, fromType="ENSEMBL", toType=c("SYMBOL", "ENTREZID"), OrgDb="org.Hs.eg.db")
+# head(test2,2)
+# ego_ALL2 <- enrichGO(gene = test2$ENTREZID, 
+#                     universe = names(geneList), #背景基因???
+#                     OrgDb = org.Hs.eg.db, #没有organism="human"，改为OrgDb=org.Hs.eg.db
+#                     #keytype = 'ENSEMBL',
+#                     ont = "ALL", #也可以是 CC  BP  MF中的一???
+#                     pAdjustMethod = "BH", #矫正方式 holm???, “hochberg???, “hommel???, “bonferroni???, “BH???, “BY???, “fdr???, “none”中的一???
+#                     pvalueCutoff = 0.05, #P值会过滤掉很多，可以全部输出
+#                     # qvalueCutoff = 1,
+#                     readable = TRUE) #Gene ID 转成gene Symbol ，易???
+# head(ego_ALL2,2)
+# result2 = list(GO=ego_ALL2, gene=test2)
+# 
+# gobro=dotplot(ego_ALL2, split="ONTOLOGY",showCategory = 10,label_format=100) + facet_grid(ONTOLOGY~., scale="free")
+# 
+# 
+# 
+data(geneList, package="DOSE")
+data <- id[which(Res_WMWANBM<0.01),1]
+data <- as.character(data)
+test3 = bitr(data, fromType="ENSEMBL", toType=c("SYMBOL", "ENTREZID"), OrgDb="org.Hs.eg.db")
+head(test3,2)
+ego_ALL3 <- enrichGO(gene = test3$ENTREZID,
+                     universe = names(geneList), #背景基因???
+                     OrgDb = org.Hs.eg.db, #没有organism="human"，改为OrgDb=org.Hs.eg.db
+                     #keytype = 'ENSEMBL',
+                     ont = "ALL", #也可以是 CC  BP  MF中的一???
+                     pAdjustMethod = "BH", #矫正方式 holm???, “hochberg???, “hommel???, “bonferroni???, “BH???, “BY???, “fdr???, “none”中的一???
+                     pvalueCutoff = 0.05, #P值会过滤掉很多，可以全部输出
+                     # qvalueCutoff = 1,
+                     readable = TRUE) #Gene ID 转成gene Symbol ，易???
+head(ego_ALL3,2)
+result3 = list(GO=ego_ALL3, gene=test3)
+
+gobro=dotplot(ego_ALL3, split="ONTOLOGY",showCategory = 10,label_format=100) + facet_grid(ONTOLOGY~., scale="free")
+
+
+
+
+
+
+
+
+# data <- id[which(Res_WMWANBM<0.01),1]
+# data <- as.character(data)
+# test1 = bitr(data, fromType="ENSEMBL", toType=c("SYMBOL", "ENTREZID"), OrgDb="org.Hs.eg.db")
+# head(test1,2)
+# ego_ALL <- enrichGO(gene = test1$ENTREZID, 
+#                     universe = names(geneList), #背景基因???
+#                     OrgDb = org.Hs.eg.db, #没有organism="human"，改为OrgDb=org.Hs.eg.db
+#                     #keytype = 'ENSEMBL',
+#                     ont = "ALL", #也可以是 CC  BP  MF中的一???
+#                     pAdjustMethod = "BH", #矫正方式 holm???, “hochberg???, “hommel???, “bonferroni???, “BH???, “BY???, “fdr???, “none”中的一???
+#                     pvalueCutoff = 0.05, #P值会过滤掉很多，可以全部输出
+#                     # qvalueCutoff = 1,
+#                     readable = TRUE) #Gene ID 转成gene Symbol ，易???
+# 
+# gobro1=dotplot(ego_ALL, split="ONTOLOGY",showCategory = 10,label_format=100) + facet_grid(ONTOLOGY~., scale="free")
+# 
+# head(ego_ALL,2)
+# 
+# result1 = list(GO=ego_ALL, gene=test1)
+# 
+# goid = match(result1[["GO"]]@result[["ID"]], ref[,1])
+# gid=na.omit(goid)
+# rgo=ref[gid,]
+# 
+# goid2 = match(result2[["GO"]]@result[["ID"]], ref[,1])
+# 
+# geneid1 = match(test1[,2], ref[,2])
+# 
+# geneid2 = match(test2[,2], ref[,2])
+# 

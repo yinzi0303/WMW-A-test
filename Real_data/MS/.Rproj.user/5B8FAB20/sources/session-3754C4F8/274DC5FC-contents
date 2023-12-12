@@ -1,0 +1,382 @@
+library("R.matlab")
+DE_Quality_AUC <- function(pVals) {
+  pVals <- pVals[which(pVals >= 0.05) %in% golden$DE | 
+                   which(pVals >= 0.05) %in% golden$notDE]
+  truth <- rep(1, times = length(pVals));
+  truth[which(pVals >= 0.05) %in% golden$DE] = 0;
+  pred <- ROCR::prediction(pVals, truth)
+  perf <- ROCR::performance(pred, "tpr", "fpr")
+  # ROCR::plot(perf)
+  aucObj <- ROCR::performance(pred, "auc")
+  return(aucObj@y.values[[1]])
+}
+DE_Quality_rate1 <- function(sigDE, unsigDE) {
+  tp <- sum(golden$DE %in% sigDE)
+  fp <- sum(golden$notDE %in% sigDE)
+  tn <- sum(golden$notDE %in% unsigDE)
+  fn <- sum(golden$DE %in% unsigDE)
+  
+  tpr <- tp/(tp + fn)
+  fpr <- fp/(fp + tn)
+  tnr = tn/(fp+tn)
+  fnr = fn/(tp+fn)
+  
+  acc <- (tp + tn)/(tp + fn+fp + tn)
+  
+  return(acc)
+}
+
+DE_Quality_rate2 <- function(sigDE, unsigDE) {
+  tp <- sum(golden$DE %in% sigDE)
+  fp <- sum(golden$notDE %in% sigDE)
+  tn <- sum(golden$notDE %in% unsigDE)
+  fn <- sum(golden$DE %in% unsigDE)
+  
+  precesion <- tp/(tp + fp)
+  
+  return(precesion)
+}
+
+DE_Quality_rate3 <- function(sigDE, unsigDE) {
+  tp <- sum(golden$DE %in% sigDE)
+  fp <- sum(golden$notDE %in% sigDE)
+  tn <- sum(golden$notDE %in% unsigDE)
+  fn <- sum(golden$DE %in% unsigDE)
+  
+  tpr <- tp/(tp + fn)
+  fpr <- fp/(fp + tn)
+  
+  # tpp <- sum(golden$DE %in% sigDE)/length(golden$DE)
+  # tnp <- sum(golden$notDE %in% unsigDE)/length(golden$notDE)
+  return(tpr)
+}
+
+DE_Quality_rate4 <- function(sigDE, unsigDE) {
+  tp <- sum(golden$DE %in% sigDE)
+  fp <- sum(golden$notDE %in% sigDE)
+  tn <- sum(golden$notDE %in% unsigDE)
+  fn <- sum(golden$DE %in% unsigDE)
+  
+  tpr <- tp/(tp + fn)
+  fpr <- fp/(fp + tn)
+  
+  # tpp <- sum(golden$DE %in% sigDE)/length(golden$DE)
+  # tnp <- sum(golden$notDE %in% unsigDE)/length(golden$notDE)
+  return(fpr)
+}
+
+
+eva <- function(ggpwmwa1, ggpwmwa1_2, de, alpha){
+  pow_gwmwa1 = matrix(nr=dim(ggpwmwa1)[1], nc=dim(ggpwmwa1)[2])
+  pow_gwmwa1_2 = matrix(nr=dim(ggpwmwa1)[1], nc=dim(ggpwmwa1)[2])
+  a1 = matrix(nr=dim(ggpwmwa1)[1], nc=dim(ggpwmwa1)[2])
+  a2 = matrix(nr=dim(ggpwmwa1)[1], nc=dim(ggpwmwa1)[2])
+  t1 = matrix(nr=dim(ggpwmwa1)[1], nc=dim(ggpwmwa1)[2])
+  t2 = matrix(nr=dim(ggpwmwa1)[1], nc=dim(ggpwmwa1)[2])
+  t3 = matrix(nr=dim(ggpwmwa1)[1], nc=dim(ggpwmwa1)[2])
+  t4 = matrix(nr=dim(ggpwmwa1)[1], nc=dim(ggpwmwa1)[2])
+  s1 = matrix(nr=dim(ggpwmwa1)[1], nc=dim(ggpwmwa1)[2])
+  s2 = matrix(nr=dim(ggpwmwa1)[1], nc=dim(ggpwmwa1)[2])
+  s3 = matrix(nr=dim(ggpwmwa1)[1], nc=dim(ggpwmwa1)[2])
+  s4 = matrix(nr=dim(ggpwmwa1)[1], nc=dim(ggpwmwa1)[2])
+  for (r in 1:dim(ggpwmwa1)[1]){
+    ppwmwa1 = matrix(nr =dim(ggpwmwa1)[2], nc=dim(ggpwmwa1)[3])
+    ppwmwa1_2 = matrix(nr =dim(ggpwmwa1)[2], nc=dim(ggpwmwa1)[3])
+    for (i in 1:dim(ggpwmwa1)[2]){
+      for (j in 1:dim(ggpwmwa1)[3]){
+        ppwmwa1[i,j] = ggpwmwa1[r,i,j]
+        ppwmwa1_2[i,j] = ggpwmwa1_2[r,i,j]
+        
+      }
+    }
+    for (i in 1:dim(ggpwmwa1)[2]){
+      de_gwmwa1 = NULL
+      de_gwmwa1_2 = NULL
+      unde_gwmwa1 = NULL
+      unde_gwmwa1_2 = NULL
+      de_gwmwa1 = which(ppwmwa1[i,]<=alpha)
+      de_gwmwa1_2 = which(ppwmwa1_2[i,]<=alpha)
+      unde_gwmwa1 = which(ppwmwa1[i,]>alpha)
+      unde_gwmwa1_2 = which(ppwmwa1_2[i,]>alpha)
+      pow_gwmwa1[r,i] = length(intersect(de,de_gwmwa1)) / length(de)
+      pow_gwmwa1_2[r,i] = length(intersect(de,de_gwmwa1_2)) / length(de)
+      ppwmwa1[i,][which(is.na(ppwmwa1[i,]))]=1
+      ppwmwa1_2[i,][which(is.na(ppwmwa1_2[i,]))]=1
+      a1[r,i] = DE_Quality_AUC(ppwmwa1[i,])
+      a2[r,i] = DE_Quality_AUC(ppwmwa1_2[i,])
+      # t1[r,i] = DE_Quality_rate1(de_gwmwa1, unde_gwmwa1)
+      # t2[r,i] = DE_Quality_rate2(de_gwmwa1, unde_gwmwa1)
+      # t3[r,i] = DE_Quality_rate3(de_gwmwa1, unde_gwmwa1)
+      # t4[r,i] = DE_Quality_rate4(de_gwmwa1, unde_gwmwa1)
+      s1[r,i] = DE_Quality_rate1(de_gwmwa1_2, unde_gwmwa1_2)
+      s2[r,i] = DE_Quality_rate2(de_gwmwa1_2, unde_gwmwa1_2)
+      s3[r,i] = DE_Quality_rate3(de_gwmwa1_2, unde_gwmwa1_2)
+      s4[r,i] = DE_Quality_rate4(de_gwmwa1_2, unde_gwmwa1_2)
+      
+      
+      # at[r,i] = DE_Quality_AUC(ppwmwa1[i,])
+      # as[r,i] = DE_Quality_AUC(ppwmwa1_2[i,])
+      
+    }
+  }
+  s <- list()
+  s <- list(a1=a1, a2=a2,s1=s2,s2=s2,s3=s3,s4=s4)
+  
+  return(s)
+}
+
+ntimes = 100
+ntest=8
+result = list()
+result$rate1$WMWA_1G_norm = matrix(data = NA, nrow = ntimes, ncol = ntest)
+result$rate2$WMWA_1G_norm = matrix(data = NA, nrow = ntimes, ncol = ntest)
+result$rate3$WMWA_1G_norm = matrix(data = NA, nrow = ntimes, ncol = ntest)
+result$rate4$WMWA_1G_norm = matrix(data = NA, nrow = ntimes, ncol = ntest)
+result$auc$WMWA_1G_norm = matrix(data = NA, nrow = ntimes, ncol = ntest)
+
+result$rate1$WMWA_2G_norm = matrix(data = NA, nrow = ntimes, ncol = ntest)
+result$rate2$WMWA_2G_norm = matrix(data = NA, nrow = ntimes, ncol = ntest)
+result$rate3$WMWA_2G_norm = matrix(data = NA, nrow = ntimes, ncol = ntest)
+result$rate4$WMWA_2G_norm = matrix(data = NA, nrow = ntimes, ncol = ntest)
+result$auc$WMWA_2G_norm = matrix(data = NA, nrow = ntimes, ncol = ntest)
+
+result$rate1$WMWA_NN_norm = matrix(data = NA, nrow = ntimes, ncol = ntest)
+result$rate2$WMWA_NN_norm = matrix(data = NA, nrow = ntimes, ncol = ntest)
+result$rate3$WMWA_NN_norm = matrix(data = NA, nrow = ntimes, ncol = ntest)
+result$rate4$WMWA_NN_norm = matrix(data = NA, nrow = ntimes, ncol = ntest)
+result$auc$WMWA_NN_norm = matrix(data = NA, nrow = ntimes, ncol = ntest)
+
+result$rate1$WMWANBM = matrix(data = NA, nrow = ntimes, ncol = ntest)
+result$rate2$WMWANBM = matrix(data = NA, nrow = ntimes, ncol = ntest)
+result$rate3$WMWANBM = matrix(data = NA, nrow = ntimes, ncol = ntest)
+result$rate4$WMWANBM = matrix(data = NA, nrow = ntimes, ncol = ntest)
+result$auc$WMWANBM = matrix(data = NA, nrow = ntimes, ncol = ntest)
+
+result$rate1$WMWA_norm = matrix(data = NA, nrow = ntimes, ncol = ntest)
+result$rate2$WMWA_norm = matrix(data = NA, nrow = ntimes, ncol = ntest)
+result$rate3$WMWA_norm = matrix(data = NA, nrow = ntimes, ncol = ntest)
+result$rate4$WMWA_norm = matrix(data = NA, nrow = ntimes, ncol = ntest)
+result$auc$WMWA_norm = matrix(data = NA, nrow = ntimes, ncol = ntest)
+
+result$rate1$WMWA_count = matrix(data = NA, nrow = ntimes, ncol = ntest)
+result$rate2$WMWA_count = matrix(data = NA, nrow = ntimes, ncol = ntest)
+result$rate3$WMWA_count = matrix(data = NA, nrow = ntimes, ncol = ntest)
+result$rate4$WMWA_count = matrix(data = NA, nrow = ntimes, ncol = ntest)
+result$auc$WMWA_count = matrix(data = NA, nrow = ntimes, ncol = ntest)
+
+alpha = 0.01
+# setwd("C:/Users/dell/Desktop/wmwa/Z/????????")
+
+
+myresult = readMat("E:/downloads/scresult/power/result_scG1norm_data5_perm_2k.mat")
+ntest = 8
+sig_score = 0.01
+ngenes = length(golden[["Res"]][["monocle"]])
+ggpwmwa1 = myresult[["wmwaG1.1"]]
+ggpwmwa1_2 = myresult[["wmwaG1.1.2"]]
+ntimes = dim(ggpwmwa1)[1]
+re_G1_norm = eva(ggpwmwa1, ggpwmwa1_2, golden$DE, alpha)
+result$rate1$WMWA_1G_norm = matrix(data = NA, nrow = ntimes, ncol = ntest)
+result$rate1$WMWA_1G_norm = re_G1_norm[["s1"]]
+result$rate2$WMWA_1G_norm = matrix(data = NA, nrow = ntimes, ncol = ntest)
+result$rate2$WMWA_1G_norm = re_G1_norm[["s2"]]
+result$rate3$WMWA_1G_norm = matrix(data = NA, nrow = ntimes, ncol = ntest)
+result$rate3$WMWA_1G_norm = re_G1_norm[["s3"]]
+result$rate4$WMWA_1G_norm = matrix(data = NA, nrow = ntimes, ncol = ntest)
+result$rate4$WMWA_1G_norm = re_G1_norm[["s4"]]
+result$auc$WMWA_1G_norm = matrix(data = NA, nrow = ntimes, ncol = ntest)
+result$auc$WMWA_1G_norm = re_G1_norm[["a2"]]
+
+
+
+
+myresult = readMat("E:/downloads/scresult/power/result_scG2norm_data5_perm_2k.mat")
+ntest = 8
+
+ngenes = length(golden[["Res"]][["monocle"]])
+ggpwmwa1 = myresult[["wmwaG2.1"]]
+ggpwmwa1_2 = myresult[["wmwaG2.1.2"]]
+ntimes = dim(ggpwmwa1)[1]
+re_G2_norm = eva(ggpwmwa1, ggpwmwa1_2, golden$DE, alpha)
+result$rate1$WMWA_2G_norm = matrix(data = NA, nrow = ntimes, ncol = ntest)
+result$rate1$WMWA_2G_norm = re_G2_norm[["s1"]]
+result$rate2$WMWA_2G_norm = matrix(data = NA, nrow = ntimes, ncol = ntest)
+result$rate2$WMWA_2G_norm = re_G2_norm[["s2"]]
+result$rate3$WMWA_2G_norm = matrix(data = NA, nrow = ntimes, ncol = ntest)
+result$rate3$WMWA_2G_norm = re_G2_norm[["s3"]]
+result$rate4$WMWA_2G_norm = matrix(data = NA, nrow = ntimes, ncol = ntest)
+result$rate4$WMWA_2G_norm = re_G2_norm[["s4"]]
+result$auc$WMWA_2G_norm = matrix(data = NA, nrow = ntimes, ncol = ntest)
+result$auc$WMWA_2G_norm = re_G2_norm[["a2"]]
+
+
+myresult = readMat("C:/Users/dell/Desktop/wmwa/Z/lunwen_1g/sc/result_scNNcount_data5_perm_2k.mat")
+# myresult = readMat("E:/downloads/scresult/power/result_scNNcount_data5_perm_2k.mat")
+ntest = 8
+
+ngenes = length(golden[["Res"]][["monocle"]])
+ggpwmwa1 = myresult[["wmwaNN1"]]
+ggpwmwa1_2 = myresult[["wmwaNN1.2"]]
+ntimes = dim(ggpwmwa1)[1]
+re_NN_count = eva(ggpwmwa1, ggpwmwa1_2, golden$DE, alpha)
+result$rate1$WMWA_NN_norm = matrix(data = NA, nrow = ntimes, ncol = ntest)
+result$rate1$WMWA_NN_norm = re_NN_count[["s1"]]
+result$rate2$WMWA_NN_norm = matrix(data = NA, nrow = ntimes, ncol = ntest)
+result$rate2$WMWA_NN_norm = re_NN_count[["s2"]]
+result$rate3$WMWA_NN_norm = matrix(data = NA, nrow = ntimes, ncol = ntest)
+result$rate3$WMWA_NN_norm = re_NN_count[["s3"]]
+result$rate4$WMWA_NN_norm = matrix(data = NA, nrow = ntimes, ncol = ntest)
+result$rate4$WMWA_NN_norm = re_NN_count[["s4"]]
+result$auc$WMWA_NN_norm = matrix(data = NA, nrow = ntimes, ncol = ntest)
+result$auc$WMWA_NN_norm = re_NN_count[["a2"]]
+
+
+
+myresult = readMat("E:/downloads/scresult/power/result_sctrue_data5_perm_2k.mat")
+ntest = 8
+
+ngenes = length(golden[["Res"]][["monocle"]])
+ggpwmwa1 = myresult[["ggpwmwa1"]]
+ggpwmwa1_2 = myresult[["ggpwmwa1.2"]]
+ntimes = dim(ggpwmwa1)[1]
+
+re_true_norm = eva(ggpwmwa1, ggpwmwa1_2, golden$DE, alpha)
+result$rate1$WMWA_norm = matrix(data = NA, nrow = ntimes, ncol = ntest)
+result$rate1$WMWA_norm = re_true_norm[["s1"]]
+result$rate2$WMWA_norm = matrix(data = NA, nrow = ntimes, ncol = ntest)
+result$rate2$WMWA_norm = re_true_norm[["s2"]]
+result$rate3$WMWA_norm = matrix(data = NA, nrow = ntimes, ncol = ntest)
+result$rate3$WMWA_norm = re_true_norm[["s3"]]
+result$rate4$WMWA_norm = matrix(data = NA, nrow = ntimes, ncol = ntest)
+result$rate4$WMWA_norm = re_true_norm[["s4"]]
+result$auc$WMWA_norm = matrix(data = NA, nrow = ntimes, ncol = ntest)
+result$auc$WMWA_norm =  re_true_norm[["a2"]]
+
+
+
+myresult = readMat("C:/Users/dell/Desktop/wmwa/Z/lunwen_1g/sc/result_sctruecount_data5_perm_2k.mat")
+# myresult = readMat("E:/downloads/scresult/power/result_sctruecount_data5_perm_2k.mat")
+ntest = 8
+
+ngenes = length(golden[["Res"]][["monocle"]])
+ggpwmwa1 = myresult[["ggpwmwa1"]]
+ggpwmwa1_2 = myresult[["ggpwmwa1.2"]]
+ntimes = dim(ggpwmwa1)[1]
+re_true_count = eva(ggpwmwa1, ggpwmwa1_2, golden$DE, alpha)
+result$rate1$WMWA_count = matrix(data = NA, nrow = ntimes, ncol = ntest)
+result$rate1$WMWA_count = re_true_count[["s1"]]
+result$rate2$WMWA_count = matrix(data = NA, nrow = ntimes, ncol = ntest)
+result$rate2$WMWA_count = re_true_count[["s2"]]
+result$rate3$WMWA_count = matrix(data = NA, nrow = ntimes, ncol = ntest)
+result$rate3$WMWA_count = re_true_count[["s3"]]
+result$rate4$WMWA_count = matrix(data = NA, nrow = ntimes, ncol = ntest)
+result$rate4$WMWA_count = re_true_count[["s4"]]
+result$auc$WMWA_count = matrix(data = NA, nrow = ntimes, ncol = ntest)
+result$auc$WMWA_count =re_true_count[["a2"]]
+
+
+
+
+
+
+
+# saveRDS(result, "compresulteva5_add2.rds")
+
+
+# myresult = readMat("E:/downloads/scresult/power/result_sctrue_data6_perm_2k.mat")
+# myresult = readMat("E:/downloads/scresult/power/result_scG1norm_data6_perm_2k.mat")
+# myresult = readMat("E:/downloads/scresult/power/result_scG2norm_data6_perm_2k.mat")
+# myresult = readMat("E:/downloads/scresult/power/result_sctruecount_data6_perm_2k.mat")
+# myresult = readMat("E:/downloads/scresult/power/result_scNNcount_data6_perm_2k.mat")
+# 
+# 
+# ntest = 8
+# sig_score = 0.05
+# ngenes = length(golden[["Res"]][["monocle"]])
+# 
+# ggpwmwa1 = myresult[["ggpwmwa1"]]
+# ggpwmwa1_2 = myresult[["ggpwmwa1.2"]]
+# 
+# ggpwmwa1 = myresult[["wmwaG1.1"]]
+# ggpwmwa1_2 = myresult[["wmwaG1.1.2"]]
+# 
+# ggpwmwa1 = myresult[["wmwaG2.1"]]
+# ggpwmwa1_2 = myresult[["wmwaG2.1.2"]]
+# 
+# ggpwmwa1 = myresult[["wmwaNN1"]]
+# ggpwmwa1_2 = myresult[["wmwaNN1.2"]]
+# 
+# ggpwmwa1 = myresult[["ggpwmwa1"]]
+# ggpwmwa1_2 = myresult[["ggpwmwa1.2"]]
+# 
+# ntimes = dim(ggpwmwa1)[1]
+# 
+# alpha = 0.05
+# 
+# re_true_norm = eva(ggpwmwa1, ggpwmwa1_2, alpha)
+# 
+# 
+# result$rate1$WMWA_norm = matrix(data = NA, nrow = ntimes, ncol = ntest)
+# result$rate1$WMWA_norm = s1
+# result$auc$WMWA_norm = matrix(data = NA, nrow = ntimes, ncol = ntest)
+# result$auc$WMWA_norm = a2
+# 
+# result$rate1$WMWA_count = matrix(data = NA, nrow = ntimes, ncol = ntest)
+# result$rate1$WMWA_count =s1
+# result$auc$WMWA_count = matrix(data = NA, nrow = ntimes, ncol = ntest)
+# result$auc$WMWA_count =a2
+# 
+# result$rate1$WMWA_1G_norm = matrix(data = NA, nrow = ntimes, ncol = ntest)
+# result$rate1$WMWA_1G_norm = s1
+# result$auc$WMWA_1G_norm = matrix(data = NA, nrow = ntimes, ncol = ntest)
+# result$auc$WMWA_1G_norm = a2
+# 
+# result$rate1$WMWA_2G_norm = matrix(data = NA, nrow = ntimes, ncol = ntest)
+# result$rate1$WMWA_2G_norm = s1
+# result$auc$WMWA_2G_norm = matrix(data = NA, nrow = ntimes, ncol = ntest)
+# result$auc$WMWA_2G_norm = a2
+# 
+# result$rate1$WMWA_NN_count = matrix(data = NA, nrow = ntimes, ncol = ntest)
+# result$rate1$WMWA_NN_count = s1
+# result$auc$WMWA_NN_count = matrix(data = NA, nrow = ntimes, ncol = ntest)
+# result$auc$WMWA_NN_count = a2
+# 
+# 
+# 
+# 
+# 
+# mpow = matrix(nr=dim(ggpwmwa1)[2], nc=1)
+# mt = matrix(nr=dim(ggpwmwa1)[2], nc=4)
+# ms = matrix(nr=dim(ggpwmwa1)[2], nc=4)
+# mat = matrix(nr=dim(ggpwmwa1)[2], nc=1)
+# mas = matrix(nr=dim(ggpwmwa1)[2], nc=1)
+# for (i in 1:dim(ggpwmwa1)[2]){
+#   mpow[i] = mean(pow_gwmwa1_2[,i])
+#   mt[i,1] = mean(t1[,i])
+#   mt[i,2] = mean(t2[,i])
+#   mt[i,3] = mean(t3[,i])
+#   mt[i,4] = mean(t4[,i])
+#   
+#   ms[i,1] = mean(s1[,i])
+#   ms[i,2] = mean(s2[,i])
+#   ms[i,3] = mean(s3[,i])
+#   ms[i,4] = mean(s4[,i])
+#   
+#   # mas[i] = mean(as[,i])
+#   # mat[i] = mean(at[,i])
+# }
+# 
+# 
+# 
+# 
+# 
+# # mrate1 = rbind(mrate1,ms[,1])
+# # mrate2 = rbind(mrate2,ms[,2])
+# # mrate3 = rbind(mrate3,ms[,3])
+# # mrate4 = rbind(mrate4,ms[,4])
+# 
+# 
+# 
+# 
+# 
+# 

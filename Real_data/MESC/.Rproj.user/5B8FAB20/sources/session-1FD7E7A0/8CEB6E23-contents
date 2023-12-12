@@ -1,0 +1,81 @@
+---
+title: "03012021_NKT_tradeseq_pvalue"
+author: "dongyuan"
+date: "2021/3/1"
+output: html_document
+---
+
+```{r}
+library(tradeSeq)
+library(SingleCellExperiment)
+library(tidyverse)
+library(slingshot)
+```
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+set.seed(7)
+NKT_sce <- readRDS("~/pseudotime/data/result/NKT/NKT_sce.rds")
+dat.sce <- NKT_sce
+
+NKT_zinbwave <- readRDS("~/pseudotime/data/result/NKT/NKT_zinbwave_sce.rds")
+NKT_weights <- assay(NKT_zinbwave, "weights")
+
+norms <- as.matrix(t(assays(NKT_sce)$norms))
+  
+pca <- prcomp(norms, scale. = FALSE)
+rd <- pca$x[, 1:3]
+
+#rd <- reducedDims(cds)$UMAP
+cl <- colData(NKT_sce)$grouping
+lin <- getLineages(rd, clusterLabels = cl, start.clus = "NKT0", end.clus = c("NKT1", "NKT17", "NKT2"))
+crv <- getCurves(lin)
+plot(rd, col = as.factor(cl), main = "color by cell type", xlab = "PC1", ylab = "PC2", pch = 16)
+lines(crv, lwd = 2)
+pseudotime <- slingPseudotime(crv, na = FALSE)
+cellWeights <- slingCurveWeights(crv)
+NKT_slingshot_icMat <- evaluateK(counts = counts(NKT_sce), pseudotime  = pseudotime, cellWeights = cellWeights,k = 3:10, nGenes = 100,
+                   verbose = FALSE, plot = TRUE, weights = NKT_weights)
+```
+
+```{r}
+diff(diff(colMeans(NKT_slingshot_icMat)))
+```
+k = 9
+
+```{r}
+set.seed(7)
+NKT_sce <- readRDS("~/pseudotime/data/result/NKT/NKT_sce.rds")
+dat.sce <- NKT_sce
+
+norms <- as.matrix(t(assays(NKT_sce)$norms))
+  
+pca <- prcomp(norms, scale. = FALSE)
+rd <- pca$x[, 1:3]
+
+#rd <- reducedDims(cds)$UMAP
+cl <- colData(NKT_sce)$grouping
+lin <- getLineages(rd, clusterLabels = cl, start.clus = "NKT0", end.clus = c("NKT1", "NKT17", "NKT2"))
+crv <- getCurves(lin)
+plot(rd, col = as.factor(cl), main = "color by cell type", xlab = "PC1", ylab = "PC2", pch = 16)
+lines(crv, lwd = 2)
+pseudotime <- slingPseudotime(crv, na = FALSE)
+cellWeights <- slingCurveWeights(crv)
+
+sce <- fitGAM(counts = as.matrix(counts(NKT_sce)), pseudotime = pseudotime, cellWeights = cellWeights,
+                 nknots = 9, verbose = TRUE, parallel =TRUE,  BPPARAM=MulticoreParam(20), weights = NKT_weights)
+assoRes_NKT_slingshot <- associationTest(sce, lineages = TRUE)
+assoRes_NKT_slingshot <- assoRes_NKT_slingshot %>% as_tibble(rownames = "gene") %>% dplyr::mutate(qvalue = p.adjust(pvalue, method = "BH"))
+```
+
+```{r}
+assoRes_NKT_slingshot
+```
+
+```{r}
+saveRDS(assoRes_NKT_slingshot,"~/pseudotime/data/result/NKT/NKT_pvalue_slingshot_tradeseq.rds")
+```
+

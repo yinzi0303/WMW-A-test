@@ -1,0 +1,815 @@
+# ******************************************************************************************* #
+#                                                                                             #
+# ***                   Running DE analysis over Islam et al. dataset                     *** #
+#                                                                                             #
+# ******************************************************************************************* #
+
+# *** The input file (Islam.txt) includes the count table.
+# *** The count table includes 7284 genes and 92 cells.
+
+# *** Set the path:
+
+rm(list= ls())
+gc()
+
+# *** Make the output directory:
+
+# dir.create(path = paste0("/Single_Cell/Results/",Sys.Date()), showWarnings = TRUE, recursive = FALSE, mode = "0777")
+# setwd(paste0("/Single_Cell/Results/",Sys.Date()))
+
+# ******************************************************************************************* #
+
+# *** TMM normalization:
+
+TMMnormalization <- function(countTable){
+  ## TMM normalization based on edgeR package:
+  require("edgeR")
+  
+  nf=calcNormFactors(countTable ,method= "TMM")
+  nf= colSums(countTable)*nf
+  scalingFactors = nf/mean(nf)
+  countTableTMM <- t(t(countTable)/scalingFactors)
+  
+  return(countTableTMM)
+  
+}
+
+# ******************************************************************************************* #
+
+# *** Running ROTS:
+
+Run_ROTS = function(rawData, gr1, gr2, B, K , FDR){
+  
+  require(ROTS)
+  
+  # rawData is the input raw count table
+  # gr1 is the number of cells in condition 1
+  # gr2 is the number of cells in condition 2
+  # B is the number of bootstraps
+  # k is the number of top ranked genes 
+  # FDR is the fdr threshold for the final detections
+  
+  # First the genes with 0 value for all the cells were filtered out:
+  
+  filtered = apply(rawData,1, function(x) {if(all(x == 0)) return (FALSE) else return(TRUE)})
+  FilteredData = rawData[filtered,]
+  
+  # TMM normalization over the raw count matrix:
+  
+  TMM_Filtered_Data = TMMnormalization(FilteredData)
+  
+  # Running ROTS over the filtered and normalized data:
+  
+  ROTS_filtered_TMM = ROTS(data = TMM_Filtered_Data, groups = c(rep(0,as.numeric(gr1)),rep(1,as.numeric(gr2))) , B = 1000, K = 6000 )
+  
+  # Rows/genes with FDR smaller than the desired threshold:
+  
+  # ROTS_results = summary(ROTS_filtered_TMM , fdr = 0.05)
+  
+  # save(ROTS_filtered_TMM , ROTS_results , file = "ROTS_results.RData")
+  pVals=ROTS_filtered_TMM[["FDR"]]
+  
+  return(pVals)
+  
+}
+
+# ******************************************************************************************* #
+
+# *** Running DESeq:
+
+# Run_DESeq = function(rawData , gr1 , gr2){
+#   
+#   require("DESeq")
+#   
+#   # First the genes with 0 value for all the cells were filtered out:
+#   
+#   filtered = apply(rawData,1, function(x) {if(all(x == 0)) return (FALSE) else return(TRUE)})
+#   
+#   FilteredData = rawData[filtered,]
+#   
+#   # Defining the sample's description and conditions:
+#   
+#   dataPack = data.frame(row.names= colnames(FilteredData), condition = c(rep("GR1",gr1) ,rep("GR2",gr2)))
+#   
+#   conds <- factor (c(rep("GR1",gr1) ,rep("GR2",gr2)))
+#   
+#   # Initializing a CountDataSet (DESeq data structure for count matrix):
+#   
+#   cds <- newCountDataSet(FilteredData, conds)
+#   
+#   # DESeq normaliztion:
+#   
+#   cds <- estimateSizeFactors (cds)
+#   print (sizeFactors(cds))
+#   print (head(counts(cds, normalized = TRUE)))
+#   
+#   # Variance estimation:
+#   
+#   cds <- estimateDispersions (cds)
+#   
+#   print(str(fitInfo(cds)))
+#   
+#   # Negative binomial test:
+#   
+#   DESeq_results = nbinomTest(cds, "GR1", "GR2")
+#   
+#   save(DESeq_results, file ="DESeq_results.RData")
+#   
+# }
+
+
+Run_DESeq = function(rawData , gs){
+  
+  require("DESeq2")
+  
+  dds <- DESeqDataSetFromMatrix(rawData, DataFrame(gs), ~ gs)
+  ## factor levels were dropped which had no samples
+  dds2 <- DESeq(dds)
+  ## estimating size factors
+  ## estimating dispersions
+  ## gene-wise dispersion estimates
+  ## mean-dispersion relationship
+  ## final dispersion estimates
+  ## fitting model and testing
+  ## -- replacing outliers and refitting for 4 genes
+  ## -- DESeq argument 'minReplicatesForReplace' = 7 
+  ## -- original counts are preserved in counts(dds)
+  ## estimating dispersions
+  ## fitting model and testing
+  res <-  results(dds2, contrast=c("gs","0","1"),alpha = sig_score)
+  pVals <- res[,6]#padj
+  pVals[which(is.na(pVals))]=1
+  # names(pVals) <- rownames(res)
+  # sigDE <- which(pVals < 0.05)
+  
+  return(pVals)
+  
+}
+
+# ******************************************************************************************* #
+
+# *** Running Limma:
+
+Run_Limma = function(rawData, gr1, gr2){
+  
+  require(limma)
+  
+  filtered = apply(rawData,1, function(x) {if(all(x == 0)) return (FALSE) else return(TRUE)})
+  FilteredData = rawData[filtered,]
+  
+  # Samples' conditions:
+  mType <- factor (c(rep("GR1",gr1) ,rep("GR2",gr2)))
+  
+  # Normalization factors from edgeR TMM method:
+  
+  nf <- calcNormFactors(FilteredData)
+  
+  design <- model.matrix(~mType)
+  
+  # Voom transformation for RNA-seq data:
+  y <- voom (FilteredData, design, lib.size = colSums(FilteredData)*nf)
+  
+  # Linear modeling:
+  
+  fit <- lmFit(y,design)
+  
+  fit <- eBayes(fit)
+  
+  # Summary of the results:
+  
+  Limma_results <- topTable(fit,coef=2,n=nrow(fit))
+  
+  pVals=Limma_results[,5]
+  pVals[which(is.na(pVals))]=1
+  pVals = as.matrix(pVals)
+  rownames(pVals)=row.names(Limma_results)
+  pid <- match(row.names(rawData),row.names(pVals))
+  pVals2 = pVals[pid,]
+  pVals2 = as.numeric(pVals2)
+  
+  return(pVals2)
+  # save(Limma_results , file = "Limma_results.RData")
+  
+}
+
+# ******************************************************************************************* #
+
+# *** Running scde:
+
+# Run_scde = function(rawData){
+#   
+#   library("scde")
+#   
+#   cd <- apply(
+#     rawData,
+#     2,
+#     function(x) {
+#       storage.mode(x) <- 'integer'
+#       return(x)
+#     }
+#   )
+#   
+#   # clean up the dataset
+#   cd = rawData
+#   cd = cd[rowSums(cd)>0, ]
+#   cd = cd[, colSums(cd)>1e4]
+#   
+#   # factor determining cell types:
+#   # sg <- factor(gsub("(MEF|ESC).*", "\\1", colnames(cd)), levels = c("ESC", "MEF"))
+#   # 
+#   # # the group factor should be named accordingly
+#   # names(sg) <- colnames(cd)  
+#   # table(sg)
+#   
+#   # calculate models (slow)
+#   o.ifm = scde.error.models(counts = cd, groups = sg, n.cores = 6, threshold.segmentation = TRUE, save.crossfit.plots = FALSE, save.model.plots = FALSE, verbose = 1)
+#   
+#   # setwd("") # Where you want the results
+#   # save("o.ifm", file="oifmRaw.RData")
+#   
+#   # filter out cells that don't show positive correlation with
+#   # the expected expression magnitudes (very poor fits)
+#   valid.cells = o.ifm$corr.a > 0
+#   table(valid.cells)
+#   
+#   o.ifm = o.ifm[valid.cells, ]
+#   
+#   # estimate gene expression prior
+#   o.prior = scde.expression.prior(models = o.ifm, counts = cd, length.out = 400, show.plot = FALSE)
+#   
+#   # save(list=c("o.ifm", "o.prior"), file="VariablesIslam.RData")                                                                                                                                                                                                                             # define two groups of cells
+#   groups = factor(gsub("(MEF|ESC).*", "\\1", rownames(o.ifm)), levels  =  c("ESC", "MEF"))
+#   names(groups) = row.names(o.ifm)
+#   # run differential expression tests on all genes.
+#   ediff = scde.expression.difference(o.ifm, cd, o.prior, groups  =  groups, n.randomizations  =  100, n.cores  =  1, verbose  =  1)
+#   
+#   # write out a table with all the results, showing most significantly different genes (in both directions) on top
+#   # write.table(ediff[order(abs(ediff$Z), decreasing = TRUE), ], file = "IslamResults.txt", row.names = TRUE, col.names = TRUE, sep = "\t", quote = FALSE)
+#   
+# }
+
+
+Run_scde = function(rawData, gs){
+  require(flexmix)
+  require(scde)
+  cnts <- apply(rawData,2,
+                function(x) {
+                  storage.mode(x) <- 'integer'
+                  return(x)
+                }
+  )
+  names(gs) <- 1:length(gs)
+  colnames(cnts) <- 1:length(gs)
+  o.ifm <- scde::scde.error.models(
+    counts = cnts,
+    groups = gs,
+    n.cores = 1,
+    threshold.segmentation = TRUE,
+    save.crossfit.plots = FALSE,
+    save.model.plots = FALSE,
+    verbose = 0,
+    min.size.entries = 2
+  )
+  priors <- scde::scde.expression.prior(
+    models = o.ifm,
+    counts = cnts,
+    length.out = 400,
+    show.plot = FALSE
+  )
+  resSCDE <- scde::scde.expression.difference(
+    o.ifm,
+    cnts,
+    priors,
+    groups = gs,
+    n.randomizations = 100,
+    n.cores = 1,
+    verbose = 0
+  )
+  # Convert Z-scores into 2-tailed p-values
+  pVals <- pnorm(abs(resSCDE$cZ), lower.tail = FALSE) * 2
+  pVals <- p.adjust(pVals, method = "fdr")
+  pVals[which(is.na(pVals))]=1
+  
+  return(pVals)
+  # sigDE <- names(pVals)[pVals < 0.05]
+  # SCDE_pVals=pVals
+  # DE_Quality_rate(sigDE)
+  # DE_Quality_AUC(pVals)
+}
+
+# ******************************************************************************************* #
+
+# *** Running MAST:
+
+# Run_MAST = function(rawData ,gr1,gr2 ){
+#   
+#   # Loading the libraries:
+#   
+#   library("MAST")
+#   library(data.table)
+#   library(plyr)
+#   
+#   data = as.matrix(rawData)
+#   
+#   th = thresholdSCRNACountMatrix(data, conditions = c(rep(1,gr1),rep(2,gr2)), nbin=40) 
+#   thdata = th$counts_threshold
+#   
+#   # Drop genes that are never detected:
+#   cs = apply(thdata, 2, sum) 
+#   thdata = thdata[,cs>0]
+#   
+#   # Drop cells with too few detections
+#   rs = apply(thdata, 1, sum) 
+#   thdata = thdata[rs>log2(1e4),]
+#   
+#   # Drop out cells with too low portion of measured genes
+#   
+#   mp = apply(thdata, 1, function(x){ 
+#     det = as.numeric(x)
+#     proportion = sum(det>0)
+#   })
+#   
+#   quan = quantile(mp)
+#   iqr = 1.5*(quan["75%"]-quan["25%"])
+#   outliers = mp<(min(mp)-iqr)
+#   thdata = thdata[!outliers,]
+#   
+#   fData = data.frame(primerid=rownames(thdata))
+#   cData = data.frame(Population=c(rep("ESC",length(grep("ola_mES_2i_2", colnames(thdata)))), rep("MEF", length(grep("ola_mES_lif_3", colnames(thdata))))), wellKey=colnames(thdata))
+#   sca = FromMatrix("SingleCellAssay", thdata, cData, fData)
+#   
+#   modelfit = zlm.SingleCellAssay(~ Population, sca)
+#   lrt = lrTest(modelfit, "Population") # returns 3 dimensonal array
+#   save(list=c("sca", "modelfit", "lrt", "thdata"), file="MASTvariables_Islam.RData")
+#   
+#   hurdle = lrt[,"hurdle", ]
+#   pvaluesh = hurdle[,"Pr(>Chisq)"] # Named vector
+#   
+#   
+#   results = data.frame(pvaluesh)
+#   colnames(results) = c("P_hurdle")
+#   write.table(results, file="MAST_Islam.txt", sep="\t", quote=F)
+#   
+# }
+
+Run_MAST = function(rawData, gs){
+  require(MAST)
+  log_counts <- log(rawData+1)/log(2)
+  fData = data.frame(names=rownames(log_counts))
+  rownames(fData) = rownames(log_counts);
+  cData = data.frame(cond=gs)
+  rownames(cData) = colnames(log_counts)
+  obj <- FromMatrix(as.matrix(log_counts), cData, fData)
+  colData(obj)$cngeneson <- scale(colSums(assay(obj)>0))
+  cond <- factor(colData(obj)$cond)
+  # Model expression as function of condition & number of detected genes
+  zlmCond <- zlm(~cond + cngeneson, obj)
+  summaryCond <- summary(zlmCond, doLRT="cond1")
+  summaryDt <- summaryCond$datatable
+  summaryDt <- as.data.frame(summaryDt)
+  pVals <- unlist(summaryDt[summaryDt$component == "H",4]) # H = hurdle model
+  names(pVals) <- unlist(summaryDt[summaryDt$component == "H",1])
+  pVals <- p.adjust(pVals, method = "fdr")
+  pVals[which(is.na(pVals))]=1
+  
+  pVals = as.matrix(pVals)
+  pid <- match(row.names(rawData),row.names(pVals))
+  pVals2 = pVals[pid,]
+  pVals2 = as.numeric(pVals2)
+  
+  return(pVals2)
+  
+  
+  # sigDE <- names(pVals)[pVals < 0.05]
+  # MAST_pVals=pVals
+  # DE_Quality_rate(sigDE)
+  # DE_Quality_AUC(pVals)
+  # return(pVals)
+}
+
+
+# ******************************************************************************************* #
+####monocle
+Run_monocle = function(rawData, gr1,gr2 , gs ){
+  
+  require(monocle)
+  pd <- data.frame(group=gs)
+  rownames(pd) <- colnames(rawData)
+  pd <- new("AnnotatedDataFrame", data = pd)
+  fData <- data.frame(gene_short_name = row.names(rawData), row.names = row.names(rawData))
+  fd <- new("AnnotatedDataFrame", data = fData)
+  Obj <- newCellDataSet(as.matrix(rawData), phenoData=pd, featureData = fd,
+                        expressionFamily=VGAM::negbinomial.size())
+  Obj <- estimateSizeFactors(Obj)
+  Obj <- estimateDispersions(Obj)
+  group=gs
+  res <- differentialGeneTest(Obj,fullModelFormulaStr="~group")
+  pVals <- res[,3]
+  names(pVals) <- rownames(res)
+  pVals[which(is.na(pVals))]=1
+  pVals <- p.adjust(pVals, method = "fdr")
+  
+  
+  
+  # sigDE <- which(pVals < 0.05)
+  # monocle_pVals=pVals
+  # DE_Quality_rate(sigDE)
+  # DE_Quality_AUC(pVals)
+  return(pVals)
+}
+
+# ******************************************************************************************* #
+# edgeR
+
+Run_edgeR = function(rawData, gr1,gr2 , gs ){
+  
+  require(edgeR)
+  
+  # assign samples to groups and set up design matrix
+  # gs <- factor(sml)
+  #group = gset$group
+  # sel=c(1,2,3,4,5,93,94,95,96,97)
+  # ex = ex_new[,sel]
+  # sml <- c(rep(0,5),rep(1,5))
+  # sml = as.character(sml)
+  # gs <- factor(sml)
+  
+  
+  dge <- DGEList(counts=rawData, norm.factors = rep(1, ncol(rawData)), group=gs)
+  group_edgeR <- gs
+  design <- model.matrix(~group_edgeR)
+  #dge <- estimateDisp(dge)
+  dge <- estimateDisp(dge, design = design)
+  fit <- glmFit(dge, design)
+  res <- glmLRT(fit)
+  pVals <- res$table[,4]
+  pVals[which(is.na(pVals))]=1
+  # names(pVals) <- rownames(res$table)
+  pVals <- p.adjust(pVals, method = "fdr")
+  # sigDE <- which(pVals < 0.05)
+  # edgeR_pVals=pVals
+  # DE_Quality_rate(sigDE)
+  ## 0.8692022 0.3948121
+  # DE_Quality_AUC(pVals)
+  return(pVals)
+  
+  
+}
+
+
+
+
+#####################################
+# Wilcox/Mann-Whitney-U Test
+
+Run_wilx = function(rawData, gr1,gr2){
+  
+  pVals <- apply(rawData, 1, function(x) {
+    wilcox.test(x[1:gr1], 
+                x[(gr1+1):(gr1+gr2)])$p.value
+  })
+  # multiple testing correction
+  pVals[which(is.na(pVals))]=1
+  pVals <- p.adjust(pVals, method = "fdr")
+  # sigDE <- which(pVals < 0.05)
+  Wilcox_pVals=pVals
+  #DE_Quality_rate(sigDE)
+  ## 0.3816953 0.08816031
+  #DE_Quality_AUC(pVals) 
+  ## [1] 0.8320326
+  
+  return(pVals)
+  
+}
+
+
+Run_ttest = function(rawData, gr1,gr2){
+  
+  V = NULL
+  pVals = NULL
+  n_sam = dim(rawData)[2]
+  ave_sam = cumsum(1:n_sam)[n_sam]/n_sam
+  # for (tj in 1:dim(rawData)[1]){
+  #   V = rank(rawData[tj,])
+  #   if( sum(V==ave_sam)==n_sam){pVals[tj] = 0} else {pVals[tj] = t.test(rawData[tj, 1:gr1], rawData[tj, (gr1+1):(gr1+gr2)])$p.value}
+  #   
+  # }
+  
+  
+  for (tj in 1:dim(rawData)[1]){
+    V = rank(rawData[tj,])
+    pVals[tj] = tryCatch({
+      t.test(rawData[tj, 1:gr1], rawData[tj, (gr1+1):(gr1+gr2)])$p.value
+      
+    },error = function(e){
+      if (identical(sort(V[1:gr1]),sort(V[1:gr1]))){1} else {0}
+    })
+  }
+  
+  
+  
+  # pVals <- apply(rawData, 1, function(x) {
+  #   t.test(x[1:gr1], x[(gr1+1):(gr1+gr2)])$p.value
+  # })
+  # multiple testing correction
+  pVals[which(is.na(pVals))]=1
+  pVals <- p.adjust(pVals, method = "fdr")
+  # sigDE <- which(pVals < 0.05)
+  Wilcox_pVals=pVals
+  #DE_Quality_rate(sigDE)
+  ## 0.3816953 0.08816031
+  #DE_Quality_AUC(pVals) 
+  ## [1] 0.8320326
+  
+  return(pVals)
+  
+}
+
+
+Run_ttestR = function(rawData, gr1,gr2){
+  
+  V = NULL
+  pVals = NULL
+  n_sam = dim(ex)[2]
+  ave_sam = cumsum(1:n_sam)[n_sam]/n_sam
+  # for (tj in 1:dim(ex)[1]){
+  #   V = rank(ex[tj,])
+  #   if( sum(V==ave_sam)==n_sam){pVals[tj] = 0} else {pVals[tj] = t.test(V[1:gr1], V[(gr1+1):(gr1+gr2)])$p.value}
+  #   
+  # }
+  
+  
+  for (tj in 1:dim(rawData)[1]){
+    V = rank(rawData[tj,])
+    pVals[tj] = tryCatch({
+      t.test(V[1:gr1], V[(gr1+1):(gr1+gr2)])$p.value
+      
+    },error = function(e){
+      if (identical(sort(V[1:gr1]),sort(V[1:gr1]))){1} else {0}
+    })
+  }
+  
+  
+  # pVals <- apply(rawData, 1, function(x) {
+  #   
+  #   t.test(rank(x)[1:gr1], rank(x)[(gr1+1):(gr1+gr2)])$p.value
+  #   
+  # })
+  # multiple testing correction
+  pVals[which(is.na(pVals))]=1
+  pVals <- p.adjust(pVals, method = "fdr")
+  # sigDE <- which(pVals < 0.05)
+  # Wilcox_pVals=pVals
+  #DE_Quality_rate(sigDE)
+  ## 0.3816953 0.08816031
+  #DE_Quality_AUC(pVals) 
+  ## [1] 0.8320326
+  
+  return(pVals)
+  
+}
+
+
+Run_welch = function(rawData, gr1,gr2){
+  
+  V = NULL
+  pVals = NULL
+  for (tj in 1:dim(rawData)[1]){
+    V = rank(rawData[tj,])
+    pVals[tj] = tryCatch({
+      t.test(rawData[tj, 1:gr1], rawData[tj, (gr1+1):(gr1+gr2)],var.equal=T,alternative="two.sided")$p.value
+      
+    },error = function(e){
+      if (identical(sort(V[1:gr1]),sort(V[1:gr1]))){1} else {0}
+    })
+  }
+  
+  # pVals <- apply(rawData, 1, function(x) {
+  #   t.test(x[1:gr1], x[(gr1+1):(gr1+gr2)],var.equal=T,alternative="two.sided")$p.value
+  # })
+  # multiple testing correction
+  pVals[which(is.na(pVals))]=1
+  pVals <- p.adjust(pVals, method = "fdr")
+  # sigDE <- which(pVals < 0.05)
+  Wilcox_pVals=pVals
+  #DE_Quality_rate(sigDE)
+  ## 0.3816953 0.08816031
+  #DE_Quality_AUC(pVals) 
+  ## [1] 0.8320326
+  
+  return(pVals)
+  
+}
+
+
+
+# DE_Quality_AUC <- function(golden, pVals) {
+#   pVals <- pVals[which(pVals >= 0.05) %in% golden$DE | 
+#                    which(pVals >= 0.05) %in% golden$notDE]
+#   truth <- rep(1, times = length(pVals));
+#   truth[which(pVals >= 0.05) %in% golden$DE] = 0;
+#   pred <- ROCR::prediction(pVals, truth)
+#   perf <- ROCR::performance(pred, "tpr", "fpr")
+#   ROCR::plot(perf)
+#   aucObj <- ROCR::performance(pred, "auc")
+#   return(aucObj@y.values[[1]])
+# }
+# DE_Quality_rate <- function(golden, sigDE, pVals) {
+#   tp <- sum(golden$DE %in% sigDE)
+#   fp <- sum(golden$notDE %in% sigDE)
+#   tn <- sum(golden$notDE %in% which(pVals >= 0.05))
+#   fn <- sum(golden$DE %in% which(pVals >= 0.05))
+#   tpr <- tp/(tp + fn)
+#   fpr <- fp/(fp + tn)
+#   
+#   return(tpr)
+# }
+
+
+
+DE_Quality_AUC <- function(golden, pVals) {
+  pVals <- pVals[which(pVals >= 0.05) %in% golden$DE | 
+                   which(pVals >= 0.05) %in% golden$notDE]
+  truth <- rep(1, times = length(pVals));
+  truth[which(pVals >= 0.05) %in% golden$DE] = 0;
+  pred <- ROCR::prediction(pVals, truth)
+  perf <- ROCR::performance(pred, "tpr", "fpr")
+  ROCR::plot(perf)
+  aucObj <- ROCR::performance(pred, "auc")
+  return(aucObj@y.values[[1]])
+}
+DE_Quality_rate1 <- function(golden, sigDE, unsigDE) {
+  tp <- sum(golden$DE %in% sigDE)
+  fp <- sum(golden$notDE %in% sigDE)
+  tn <- sum(golden$notDE %in% unsigDE)
+  fn <- sum(golden$DE %in% unsigDE)
+  
+  tpr <- tp/(tp + fn)
+  fpr <- fp/(fp + tn)
+  
+  tpp <- sum(golden$DE %in% sigDE)/length(golden$DE)
+  tnp <- sum(golden$notDE %in% unsigDE)/length(golden$notDE)
+  return(tpp)
+}
+
+DE_Quality_rate2 <- function(golden, sigDE, unsigDE) {
+  tp <- sum(golden$DE %in% sigDE)
+  fp <- sum(golden$notDE %in% sigDE)
+  tn <- sum(golden$notDE %in% unsigDE)
+  fn <- sum(golden$DE %in% unsigDE)
+  
+  tpr <- tp/(tp + fn)
+  fpr <- fp/(fp + tn)
+  
+  tpp <- sum(golden$DE %in% sigDE)/length(golden$DE)
+  tnp <- sum(golden$notDE %in% unsigDE)/length(golden$notDE)
+  return(tnp)
+}
+
+DE_Quality_rate3 <- function(golden, sigDE, unsigDE) {
+  tp <- sum(golden$DE %in% sigDE)
+  fp <- sum(golden$notDE %in% sigDE)
+  tn <- sum(golden$notDE %in% unsigDE)
+  fn <- sum(golden$DE %in% unsigDE)
+  
+  tpr <- tp/(tp + fn)
+  fpr <- fp/(fp + tn)
+  
+  tpp <- sum(golden$DE %in% sigDE)/length(golden$DE)
+  tnp <- sum(golden$notDE %in% unsigDE)/length(golden$notDE)
+  return(tpr)
+}
+
+DE_Quality_rate4 <- function(golden, sigDE, unsigDE) {
+  tp <- sum(golden$DE %in% sigDE)
+  fp <- sum(golden$notDE %in% sigDE)
+  tn <- sum(golden$notDE %in% unsigDE)
+  fn <- sum(golden$DE %in% unsigDE)
+  
+  tpr <- tp/(tp + fn)
+  fpr <- fp/(fp + tn)
+  
+  tpp <- sum(golden$DE %in% sigDE)/length(golden$DE)
+  tnp <- sum(golden$notDE %in% unsigDE)/length(golden$notDE)
+  return(fpr)
+}
+
+
+
+# ******************************************************************************************* #
+
+# *** Read in the raw data:
+setwd("C:/Users/dell/Desktop/wmwa/Z/????????")
+data = readRDS('scRNAdata.rds')
+case = readRDS("caseall.rds")
+caseid = c(rep(1,5), rep(2,5), rep(3,5), rep(4,5), rep(5,3), rep(6,3))
+contid = c(rep(5:9,4), rep(7:9,2))
+id = 5
+num = 100
+Res = list()
+
+casesamples = case[[caseid[id]]] #1,2,3,4
+contsamples = case[[contid[id]]] #5,6
+counts = cbind(casesamples, contsamples)
+
+counts = as.matrix(counts)
+rownames(counts) = data[["genesymbol"]][["SYMBOL"]]
+counts = data.frame(counts)
+
+
+del_cell =NULL
+for (i in 1:dim(counts)[2]){
+  if (length(which(counts[,i]>0))<=10){
+    del_cell = c(del_cell,i)
+  }
+}
+del_gene =NULL
+for (i in 1:dim(counts)[1]){
+  if (length(which(counts[i,]>0))<3){
+    del_gene = c(del_gene,i)
+  }
+}
+# write.csv(del_gene,"sel5.csv")
+genes = setdiff(1:dim(counts)[1],del_gene)
+ex_new = as.matrix(counts[genes,])
+
+sig_score = 0.05
+result = list()
+
+for (t in 1:num){
+  
+  
+
+  # file=paste0("./count_result/degene",id,".rds")
+  # DE = readRDS(file)
+  
+  
+  
+  # result$Res[[t]]=list()
+
+  
+  
+  result$Res$ROTS[[t]] = list()
+  result$Res$DESeq[[t]] = list()
+  result$Res$Limma[[t]] = list()
+  result$Res$MAST[[t]] = list()
+  result$Res$monocle[[t]] = list()
+  result$Res$edgeR[[t]] = list()
+  result$Res$wilx[[t]] = list()
+  result$Res$scde[[t]] = list()
+  result$Res$ttest[[t]] = list()
+  result$Res$ttestR[[t]] = list()
+  result$Res$welch[[t]] = list()
+  
+  
+  
+  n1=c(5,5,5,5,10,15,20,25)
+  n2=c(5,10,15,20,10,15,20,25)
+  #length(n1)
+  for (j in 1:length(n1)){
+    sel_1 = sample(1:dim(casesamples)[2],n1[j])
+    sel_2 = dim(casesamples)[2]+sample(1:dim(contsamples)[2],n2[j])
+    sel = c(sel_1,sel_2)
+    ex = ex_new[,sel]
+    sml <- c(rep(0,n1[j]),rep(1,n2[j]))
+    sml = as.character(sml)
+    gs <- factor(sml)
+    
+    
+    ####################################################################################
+    Res_ROTS = Run_ROTS(rawData = ex, gr1= n1[j], gr2=n2[j], B=1000, K=3000 , FDR = sig_score )
+    Res_DESeq = Run_DESeq(rawData = ex, gs)
+    Res_Limma = Run_Limma(rawData = ex, gr1= n1[j], gr2=n2[j] )
+    Res_MAST = Run_MAST(rawData = ex, gs)
+    Res_monocle = Run_monocle(rawData = ex, gr1= n1[j], gr2=n2[j], gs )
+    Res_edgeR = Run_edgeR(rawData = ex, gr1= n1[j], gr2=n2[j], gs )
+    Res_wilx = Run_wilx(rawData = ex, gr1= n1[j], gr2=n2[j])
+    Res_scde = Run_scde(rawData = ex, gs)
+    Res_ttest = Run_ttest(rawData = ex, gr1= n1[j], gr2=n2[j])
+    Res_ttestR = Run_ttestR(rawData = ex, gr1= n1[j], gr2=n2[j])
+    Res_welch = Run_welch(rawData = ex, gr1= n1[j], gr2=n2[j])
+
+    
+    result$Res$ROTS[[t]][[j]] = Res_ROTS
+    result$Res$DESeq[[t]][[j]] = Res_DESeq
+    result$Res$Limma[[t]][[j]] = Res_Limma
+    result$Res$MAST[[t]][[j]] = Res_MAST
+    result$Res$monocle[[t]][[j]] = Res_monocle
+    result$Res$edgeR[[t]][[j]] = Res_edgeR
+    result$Res$wilx[[t]][[j]] = Res_wilx
+    result$Res$scde[[t]][[j]] = Res_scde
+    result$Res$ttest[[t]][[j]] = Res_ttest
+    result$Res$ttestR[[t]][[j]] = Res_ttestR
+    result$Res$welch[[t]][[j]] = Res_welch
+    
+  }
+  
+  # DE=list(DE_gene=DE_gene,UNDE_gene=UNDE_gene)
+  # saveRDS(DE,'degene9.rds')
+
+  # result = list(rate=rate, auc=auc)
+  saveRDS(result,"compresult.rds")
+  
+}
+    
+

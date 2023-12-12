@@ -1,0 +1,289 @@
+
+
+
+Execute_DEsingle <- function(object, DEsingle.parallel = FALSE){
+  
+  object_DEsingle <- as.matrix(SummarizedExperiment::assay(object, "counts"))
+  results_DEsingle <- DEsingle::DEsingle(counts = object_DEsingle,
+                                         group = factor(object$label),
+                                         parallel = DEsingle.parallel)
+  result_DEsingle_DE <- list(gene_names = row.names(results_DEsingle), pvalue = results_DEsingle$pvalue,
+                             FDR = results_DEsingle$pvalue.adj.FDR)
+  
+  pval=results_DEsingle$pvalue.adj.FDR
+  pval = as.data.frame(pval)
+  rownames(pval)=rownames(results_DEsingle)
+  genes = rownames(object@assays@data@listData[["counts"]])
+  a=match(rownames(pval), genes)
+  Dep = data.frame(pval=matrix(1, nrow = length(genes),ncol = 1))
+  Dep[a,1] = results_DEsingle$pvalue
+  return(Dep)
+}
+
+
+# perform zingeR.edgeR
+Execute_zingeR.edgeR <- function(object, maxit.EM = 200){
+  
+  object_zingerR.edgeR <- as.matrix(SummarizedExperiment::assay(object, "counts"))
+  
+  dge <- edgeR::DGEList(round(object_zingerR.edgeR), group = factor(object$label))
+  dge <- edgeR::calcNormFactors(dge)
+  groups <- object$label
+  design <- stats::model.matrix(~groups)
+  weights <- zeroWeightsLS(counts=dge$counts, design=design, maxit = maxit.EM, normalization="TMM")
+  dge$weights <- weights
+  
+  dge = edgeR::estimateDisp(dge, design)
+  fit = edgeR::glmFit(dge, design)
+  lrt = glmWeightedF(fit, coef=2, independentFiltering = TRUE)
+  
+  result_zingerR.edgeR <- list(gene_names = rownames(lrt$table),
+                               pvalue = lrt$table$PValue,
+                               FDR = lrt$table$padjFilter)
+  Dep = result_zingerR.edgeR[["pvalue"]]
+  return(Dep)
+}
+
+
+data_process <- function(Data, group, norm.form = "CPM",  is.normalized = FALSE){
+  options(warn = -1)
+  
+  if(is.normalized){
+    
+    # normcounts <- Data
+    gene_df <- data.frame(Gene = rownames(Data))
+    cell_df <- data.frame(cell = colnames(Data))
+    # # pd <- new("AnnotatedDataFrame", data = cell_df)
+    # # fd <- new("AnnotatedDataFrame", data = gene_df)
+    # # transfer <- new("CellDataSet", exprs = as.matrix(Data))
+    # cds <- monocle::newCellDataSet(cellData = Data, expressionFamily = tobit())
+    
+    
+    exp.matrix <- as(as.matrix(Data), 'sparseMatrix')
+    feature_ann <- data.frame(gene_id=rownames(exp.matrix),gene_short_name=rownames(exp.matrix))
+    rownames(feature_ann) <-row.names(Data)
+    fd <- new("AnnotatedDataFrame", data = feature_ann)
+    sample_ann <- data.frame(group=group)
+    rownames(sample_ann) <- colnames(Data)
+    pd <- new("AnnotatedDataFrame", data = sample_ann)
+    cds <- newCellDataSet(exp.matrix, phenoData =pd, featureData =fd, expressionFamily=VGAM::negbinomial.size())
+    
+    # 
+    # counts_relative <- monocle::relative2abs(cds)
+    # counts_relative <- floor(counts_relative)
+    sce <- SingleCellExperiment::SingleCellExperiment(assays = list(counts = counts_relative, normcounts = normcounts))
+    gene_df <- data.frame(Gene = rownames(sce))
+    cell_df <- data.frame(label = group, cell = colnames(sce))
+    rownames(gene_df) <- gene_df$Gene
+    rownames(cell_df) <- cell_df$cell
+    sce <- SingleCellExperiment::SingleCellExperiment(assays = list(counts = cds, normcounts = normcounts),
+                                                      colData = cell_df,
+                                                      rowData = gene_df)
+    # sce <- scater::calculateQCMetrics(sce)
+  } else
+  {
+    normcounts <- normalized(Data, method = norm.form)
+    sce <- SingleCellExperiment::SingleCellExperiment(assays = list(counts = Data, normcounts = normcounts))
+    gene_df <- data.frame(Gene = rownames(sce))
+    cell_df <- data.frame(label = group, cell = colnames(sce))
+    rownames(gene_df) <- gene_df$Gene
+    rownames(cell_df) <- cell_df$cell
+    sce <- SingleCellExperiment::SingleCellExperiment(assays = list(counts = Data, normcounts = normcounts),
+                                                      colData = cell_df,
+                                                      rowData = gene_df)
+    # sce <- scater::calculateQCMetrics(sce)
+  }
+  
+  return(sce)
+}
+
+
+
+normalized <- function(counts.matrix, method = "CPM"){
+  if(method == "TMM"){
+    norm_factor <- edgeR::calcNormFactors(counts.matrix, method = method)
+    norm.item <- t(t(counts.matrix)/norm_factor)
+    return(norm.item)
+  }
+  if(method == "RLE"){
+    geomeans <- exp(rowMeans(log(counts.matrix)))
+    SF <-function(cnts){
+      stats::median((cnts/geomeans)[is.finite(geomeans) & geomeans >0])
+    }
+    norm_factor <- apply(counts.matrix, 2, SF)
+    norm.item <- t(t(counts.matrix)/norm_factor)
+    return(norm.item)
+  }
+  if(method == "CPM"){
+    # sce <- SingleCellExperiment::SingleCellExperiment(assays = list(counts = counts.matrix))
+    # gene_df <- DataFrame(Gene = rownames(sce))
+    # cell_df <- DataFrame(cell = colnames(sce))
+    # rownames(gene_df) <- gene_df$Gene
+    # rownames(cell_df) <- cell_df$cell
+    # sce <- SingleCellExperiment::SingleCellExperiment(assays = list(counts = counts.matrix),
+    #                                                   colData = cell_df,
+    #                                                   rowData = gene_df)
+    # norm.item <- scater::calculateCPM(sce)
+    norm_factor <- colSums(counts.matrix)
+    norm.item <- t(t(counts.matrix)/norm_factor) * 1e6
+    return(norm.item)
+  }
+  # if(method == "TPM"){
+  #   sce <- SingleCellExperiment::SingleCellExperiment(assays = list(counts = counts.matrix))
+  #   gene_df <- DataFrame(Gene = rownames(sce))
+  #   cell_df <- DataFrame(cell = colnames(sce))
+  #   rownames(gene_df) <- gene_df$Gene
+  #   rownames(cell_df) <- cell_df$cell
+  #   sce <- SingleCellExperiment::SingleCellExperiment(assays = list(counts = counts.matrix),
+  #                                                     colData = cell_df,
+  #                                                     rowData = gene_df)
+  #   norm.item <- scater::calculateTPM(sce, exprs_values = "counts")
+  #   return(norm.item)
+  # }
+}
+
+
+
+
+
+
+
+
+# require(ZIAQ)
+require(edgeR)
+source("zingR.R")
+require(DEsingle)
+
+data = readRDS('scRNAdata.rds')
+case = readRDS("caseall.rds")
+caseid = c(rep(1,5), rep(2,5), rep(3,5), rep(4,5), rep(5,3), rep(6,3))
+contid = c(rep(5:9,4), rep(7:9,2))
+id = 5
+num = 100
+Res = list()
+
+casesamples = case[[caseid[id]]] #1,2,3,4
+contsamples = case[[contid[id]]] #5,6
+counts = cbind(casesamples, contsamples)
+
+counts = as.matrix(counts)
+rownames(counts) = data[["genesymbol"]][["SYMBOL"]]
+counts = data.frame(counts)
+
+
+del_cell =NULL
+for (i in 1:dim(counts)[2]){
+  if (length(which(counts[,i]>0))<=10){
+    del_cell = c(del_cell,i)
+  }
+}
+del_gene =NULL
+for (i in 1:dim(counts)[1]){
+  if (length(which(counts[i,]>0))<3){
+    del_gene = c(del_gene,i)
+  }
+}
+# write.csv(del_gene,"sel5.csv")
+genes = setdiff(1:dim(counts)[1],del_gene)
+ex_new = as.matrix(counts[genes,])
+
+sig_score = 0.05
+result = list()
+result_nm2 = list()
+
+
+
+for (t in 1:num){
+  
+  
+  
+  # file=paste0("./count_result/degene",id,".rds")
+  # DE = readRDS(file)
+  
+  
+  
+  # result$Res[[t]]=list()
+  
+  
+  
+  # result$Res$ROTS[[t]] = list()
+  # result$Res$DESeq[[t]] = list()
+  # result$Res$Limma[[t]] = list()
+  # result$Res$MAST[[t]] = list()
+  # result$Res$monocle[[t]] = list()
+  # result$Res$edgeR[[t]] = list()
+  # result$Res$wilx[[t]] = list()
+  # result$Res$scde[[t]] = list()
+  # result$Res$ttest[[t]] = list()
+  # result$Res$ttestR[[t]] = list()
+  # result$Res$welch[[t]] = list()
+  
+
+  result_nm2$Res$ZIAQ[[t]] = list()
+  
+  
+  
+  n1=c(5,5,5,5,10,15,20,25)
+  n2=c(5,10,15,20,10,15,20,25)
+  #length(n1)
+  for (j in 1:length(n1)){
+    sel_1 = sample(1:dim(casesamples)[2],n1[j])
+    sel_2 = dim(casesamples)[2]+sample(1:dim(contsamples)[2],n2[j])
+    sel = c(sel_1,sel_2)
+    ex = ex_new[,sel]
+    sml <- c(rep(0,n1[j]),rep(1,n2[j]))
+    gs <- factor(as.character(sml))
+    colDat = data.frame(condition = sml)
+    
+    
+    ####################################################################################
+    # Res_ROTS = Run_ROTS(rawData = ex, gr1= n1[j], gr2=n2[j], B=1000, K=3000 , FDR = sig_score )
+    # Res_DESeq = Run_DESeq(rawData = ex, gs)
+    # Res_Limma = Run_Limma(rawData = ex, gr1= n1[j], gr2=n2[j] )
+    # Res_MAST = Run_MAST(rawData = ex, gs)
+    # Res_monocle = Run_monocle(rawData = ex, gr1= n1[j], gr2=n2[j], gs )
+    # Res_edgeR = Run_edgeR(rawData = ex, gr1= n1[j], gr2=n2[j], gs )
+    # Res_wilx = Run_wilx(rawData = ex, gr1= n1[j], gr2=n2[j])
+    # Res_scde = Run_scde(rawData = ex, gs)
+    # Res_ttest = Run_ttest(rawData = ex, gr1= n1[j], gr2=n2[j])
+    # Res_ttestR = Run_ttestR(rawData = ex, gr1= n1[j], gr2=n2[j])
+    # Res_welch = Run_welch(rawData = ex, gr1= n1[j], gr2=n2[j])
+    
+    # Data <- data_process(Data = ex, group = sml, is.normalized = F)
+    # Res_zingeR <- Execute_zingeR.edgeR(Data,  maxit.EM = 200)
+    # Res_DEsingle <- Execute_DEsingle(object = Data, DEsingle.parallel = F)
+    
+    res = ziaq(ex, colDat, formula = ~ condition,
+               group = 'condition', probs = c(0.25, 0.5, 0.75),
+               log_i = TRUE, parallel = FALSE, no.core = 1)
+    Res_ZIAQ = as.matrix(res[["pvalue"]])
+    
+    
+    
+    # result$Res$ROTS[[t]][[j]] = Res_ROTS
+    # result$Res$DESeq[[t]][[j]] = Res_DESeq
+    # result$Res$Limma[[t]][[j]] = Res_Limma
+    # result$Res$MAST[[t]][[j]] = Res_MAST
+    # result$Res$monocle[[t]][[j]] = Res_monocle
+    # result$Res$edgeR[[t]][[j]] = Res_edgeR
+    # result$Res$wilx[[t]][[j]] = Res_wilx
+    # result$Res$scde[[t]][[j]] = Res_scde
+    # result$Res$ttest[[t]][[j]] = Res_ttest
+    # result$Res$ttestR[[t]][[j]] = Res_ttestR
+    # result$Res$welch[[t]][[j]] = Res_welch
+    
+    # result_nm2$Res$zingeR[[t]][[j]] = Res_zingeR
+    # result_nm2$Res$DEsingle[[t]][[j]] = Res_DEsingle
+    result_nm2$Res$ZIAQ[[t]][[j]] = Res_ZIAQ
+    
+  }
+  
+  # DE=list(DE_gene=DE_gene,UNDE_gene=UNDE_gene)
+  # saveRDS(DE,'degene9.rds')
+  
+  # result_nm = list(rate=rate, auc=auc)
+  saveRDS(result_nm2,"compresult_nm2.rds")
+  
+}
+
+

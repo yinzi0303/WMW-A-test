@@ -1,0 +1,204 @@
+DE_Quality_AUC <- function(golden, pVals) {
+  pVals <- pVals[which(pVals >= 0.05) %in% golden$DE | 
+                   which(pVals >= 0.05) %in% golden$notDE]
+  truth <- rep(1, times = length(pVals));
+  truth[which(pVals >= 0.05) %in% golden$DE] = 0;
+  pred <- ROCR::prediction(pVals, truth)
+  perf <- ROCR::performance(pred, "tpr", "fpr")
+  # ROCR::plot(perf)
+  aucObj <- ROCR::performance(pred, "auc")
+  return(aucObj@y.values[[1]])
+}
+DE_Quality_rate1 <- function(golden, sigDE, unsigDE) {
+  tp <- sum(golden$DE %in% sigDE)
+  fp <- sum(golden$notDE %in% sigDE)
+  tn <- sum(golden$notDE %in% unsigDE)
+  fn <- sum(golden$DE %in% unsigDE)
+  
+  tpr <- tp/(tp + fn)
+  fpr <- fp/(fp + tn)
+  tnr = tn/(fp+tn)
+  fnr = fn/(tp+fn)
+  
+  acc <- (tp + tn)/(tp + fn+fp + tn)
+  
+  return(acc)
+}
+
+DE_Quality_rate2 <- function(golden, sigDE, unsigDE) {
+  tp <- sum(golden$DE %in% sigDE)
+  fp <- sum(golden$notDE %in% sigDE)
+  tn <- sum(golden$notDE %in% unsigDE)
+  fn <- sum(golden$DE %in% unsigDE)
+  
+  precesion <- tp/(tp + fp)
+  
+  return(precesion)
+}
+
+DE_Quality_rate3 <- function(golden, sigDE, unsigDE) {
+  tp <- sum(golden$DE %in% sigDE)
+  fp <- sum(golden$notDE %in% sigDE)
+  tn <- sum(golden$notDE %in% unsigDE)
+  fn <- sum(golden$DE %in% unsigDE)
+  
+  tpr <- tp/(tp + fn)
+  fpr <- fp/(fp + tn)
+  
+  # tpp <- sum(golden$DE %in% sigDE)/length(golden$DE)
+  # tnp <- sum(golden$notDE %in% unsigDE)/length(golden$notDE)
+  return(tpr)
+}
+
+DE_Quality_rate4 <- function(golden, sigDE, unsigDE) {
+  tp <- sum(golden$DE %in% sigDE)
+  fp <- sum(golden$notDE %in% sigDE)
+  tn <- sum(golden$notDE %in% unsigDE)
+  fn <- sum(golden$DE %in% unsigDE)
+  
+  tpr <- tp/(tp + fn)
+  fpr <- fp/(fp + tn)
+  
+  # tpp <- sum(golden$DE %in% sigDE)/length(golden$DE)
+  # tnp <- sum(golden$notDE %in% unsigDE)/length(golden$notDE)
+  return(fpr)
+}
+
+
+
+#########################################################################################
+
+
+setwd("C:/Users/dell/Desktop/wmwa/Z/lunwen_1g/RNA-seq/GSE54456")
+
+dataset = readRDS('GSE54456.rds') #count data, 1410*60
+data = dataset[["expr"]]
+
+
+result_comp = readRDS("compresult_54456_old2.rds") #old, 100
+result_nm = readRDS("compresult_54456_nm.rds") #monocle,50
+result_monocle = readRDS("compresult_54456_monocle.rds")
+
+# idxi1 = NULL; idxj1 = NULL
+# idxi2 = NULL; idxj2 = NULL
+# for (i in 1:100){
+#   for (j in 1:8){
+#     p_agg = result_AGG_muscat[["Res"]][["Agg"]][[i]][[j]]
+#     p_mus = result_AGG_muscat[["Res"]][["muscat"]][[i]][[j]]
+# 
+#     if (length(na.omit(p_agg))==0){
+#       idxi1 = c(idxi1, i)
+#       idxj1 = c(idxj1, j)
+#     }
+#     
+#     if (length(na.omit(p_mus))==0){
+#       idxi2 = c(idxi2, i)
+#       idxj2 = c(idxj2, j)
+#     }
+#     
+#   }
+# }
+
+for (i in 1:100){
+  for (j in 1:8){
+    p_mus = result_nm[["Res"]][["muscat"]][[i]][[j]]
+
+    if (length(na.omit(p_mus))>0){
+      p_mus[which(is.na(p_mus))]=1
+      result_nm[["Res"]][["muscat"]][[i]][[j]] <- p.adjust(p_mus, method = "fdr")
+    }
+  
+  }
+}
+
+for (i in 1:length(result_nm[["Res"]][["DEsingle"]])){
+  for (j in 1:8){
+    p_DEsingle = result_nm[["Res"]][["DEsingle"]][[i]][[j]][["pval"]]
+    p_zingeR = result_nm[["Res"]][["zingeR"]][[i]][[j]]
+    
+    if (length(na.omit(p_DEsingle))>0){
+      p_DEsingle[which(is.na(p_DEsingle))]=1
+      result_nm[["Res"]][["DEsingle"]][[i]][[j]] <- p_DEsingle
+    }
+    
+    if (length(na.omit(p_zingeR))>0){
+      p_zingeR[which(is.na(p_zingeR))]=1
+      result_nm[["Res"]][["zingeR"]][[i]][[j]] <- p.adjust(p_zingeR, method = "fdr")
+    }
+    
+  }
+}
+
+
+
+
+
+
+
+
+
+
+result = result_comp
+result[["Res"]][["monocle"]] = result_monocle[["Res"]][["monocle"]]
+result[["Res"]][["muscat"]] = result_nm[["Res"]][["muscat"]]
+result[["Res"]][["DEsingle"]] = result_nm[["Res"]][["DEsingle"]]
+result[["Res"]][["zingeR"]] = result_nm[["Res"]][["zingeR"]]
+
+
+
+
+
+ntimes = 100
+
+golden = NULL
+# golden$DE = DE$DE_gene$monocle
+# golden$notDE = DE$UNDE_gene$monocle
+# golden$DE = DE$DE_gene$MAST
+# golden$notDE = DE$UNDE_gene$MAST
+# golden$DE = DE$DE_gene$scde
+# golden$notDE = DE$UNDE_gene$scde
+
+#######################################
+# DE = readRDS("degene5_sig1")
+#######################################
+# sigde1 = DE$DE_gene$DESeq
+# sigde2 = DE$DE_gene$Limma
+# sigde3 = DE$DE_gene$monocle
+# sigde4 = DE$DE_gene$MAST
+# sigde5 = DE$DE_gene$edgeR
+# sigde6 = DE$DE_gene$scde
+# 
+# sigde = intersect(sigde3, intersect(sigde4, sigde6))
+# 
+# sigde_all = intersect(intersect(intersect(intersect(sigde1, intersect(sigde2, sigde3)), sigde4), sigde5), sigde6)
+# sigde = intersect(sigde_all, logfc)
+################################################
+dep = readRDS("deresult_54456.rds")#old
+
+de = dep
+for (s in 1:6){
+  pval = dep[["Res"]][[s]]
+  pval[which(is.na(pval))]=1
+  dep[["Res"]][[s]] <- pval
+}
+
+
+for (s in c(7,9)){
+  pval = dep[["Res"]][[s]]
+  pval[which(is.na(pval))]=1
+  dep[["Res"]][[s]] <- p.adjust(pval, method = "fdr")
+}
+
+
+pval = dep[["Res"]][["DEsingle"]][["pval"]]
+pval[which(is.na(pval))]=1
+dep[["Res"]][["DEsingle"]] <- pval
+
+
+
+degene=dep[["Res"]]
+comb = list(degene=dep[["Res"]], result=result)
+
+saveRDS(degene,file="compresult_deg.rds")
+
+

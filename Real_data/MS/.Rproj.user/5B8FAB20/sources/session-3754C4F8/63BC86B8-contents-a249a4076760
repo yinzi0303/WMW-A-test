@@ -1,0 +1,265 @@
+DE_Quality_AUC <- function(golden, pVals) {
+  pVals <- pVals[which(pVals >= 0.05) %in% golden$DE | 
+                   which(pVals >= 0.05) %in% golden$notDE]
+  truth <- rep(1, times = length(pVals));
+  truth[which(pVals >= 0.05) %in% golden$DE] = 0;
+  pred <- ROCR::prediction(pVals, truth)
+  perf <- ROCR::performance(pred, "tpr", "fpr")
+  # ROCR::plot(perf)
+  aucObj <- ROCR::performance(pred, "auc")
+  return(aucObj@y.values[[1]])
+}
+DE_Quality_rate1 <- function(golden, sigDE, unsigDE) {
+  tp <- sum(golden$DE %in% sigDE)
+  fp <- sum(golden$notDE %in% sigDE)
+  tn <- sum(golden$notDE %in% unsigDE)
+  fn <- sum(golden$DE %in% unsigDE)
+  
+  tpr <- tp/(tp + fn)
+  fpr <- fp/(fp + tn)
+  tnr = tn/(fp+tn)
+  fnr = fn/(tp+fn)
+  
+  acc <- (tp + tn)/(tp + fn+fp + tn)
+  
+  return(acc)
+}
+
+DE_Quality_rate2 <- function(golden, sigDE, unsigDE) {
+  tp <- sum(golden$DE %in% sigDE)
+  fp <- sum(golden$notDE %in% sigDE)
+  tn <- sum(golden$notDE %in% unsigDE)
+  fn <- sum(golden$DE %in% unsigDE)
+  
+  precesion <- tp/(tp + fp)
+  
+  return(precesion)
+}
+
+DE_Quality_rate3 <- function(golden, sigDE, unsigDE) {
+  tp <- sum(golden$DE %in% sigDE)
+  fp <- sum(golden$notDE %in% sigDE)
+  tn <- sum(golden$notDE %in% unsigDE)
+  fn <- sum(golden$DE %in% unsigDE)
+  
+  tpr <- tp/(tp + fn)
+  fpr <- fp/(fp + tn)
+  
+  # tpp <- sum(golden$DE %in% sigDE)/length(golden$DE)
+  # tnp <- sum(golden$notDE %in% unsigDE)/length(golden$notDE)
+  return(tpr)
+}
+
+DE_Quality_rate4 <- function(golden, sigDE, unsigDE) {
+  tp <- sum(golden$DE %in% sigDE)
+  fp <- sum(golden$notDE %in% sigDE)
+  tn <- sum(golden$notDE %in% unsigDE)
+  fn <- sum(golden$DE %in% unsigDE)
+  
+  tpr <- tp/(tp + fn)
+  fpr <- fp/(fp + tn)
+  
+  # tpp <- sum(golden$DE %in% sigDE)/length(golden$DE)
+  # tnp <- sum(golden$notDE %in% unsigDE)/length(golden$notDE)
+  return(fpr)
+}
+
+
+
+#########################################################################################
+
+
+setwd("C:/Users/dell/Desktop/wmwa/Z/lunwen_1g/RNA-seq/GSE54456")
+
+dataset = readRDS('GSE54456.rds') #count data, 1410*60
+data = dataset[["expr"]]
+label = dataset$label
+
+result = readRDS("result_54456.rds")
+
+result_my = readRDS("WMWAresult_54456_add.rds")
+# DEG = read.csv("deg.csv")
+# DE = match(DEG[,1], rownames(data))
+
+ntimes = length(result_my[[1]][[1]])
+
+# result = list()
+result$Res$WMWANLM = result_my[["Res"]][["WMWANLM"]]
+result$Res$WMWALNM = result_my[["Res"]][["WMWALNM"]]
+result$Res$WMWANL = result_my[["Res"]][["WMWANL"]]
+result$Res$WMWALN = result_my[["Res"]][["WMWALN"]]
+result$Res$WMWAtrue = result_my[["Res"]][["WMWAtrue"]]
+
+for (t in 1:ntimes){
+
+  for (j in 1:1){
+    
+    result$Res$WMWANLM[[t]][[j]] = p.adjust(result_my$Res$WMWANLM[[t]][[j]], method = "fdr")
+    
+    result$Res$WMWALNM[[t]][[j]] = p.adjust(result_my[["Res"]][["WMWALNM"]][[t]][[j]], method = "fdr")
+   
+    result$Res$WMWANL[[t]][[j]] = p.adjust(result_my[["Res"]][["WMWANL"]][[t]][[j]], method = "fdr")
+    
+    result$Res$WMWALN[[t]][[j]] = p.adjust(result_my[["Res"]][["WMWALN"]][[t]][[j]], method = "fdr")
+    
+    result$Res$WMWAtrue[[t]][[j]] = p.adjust(result_my[["Res"]][["WMWAtrue"]][[t]][[j]], method = "fdr")
+  
+    
+  }
+  
+  # saveRDS(result,"WMWAresult_54456_add.rds")
+  
+}
+
+
+# for (t in 1:ntimes){
+#   
+#   for (j in 1:1){
+#     
+#     result$Res$WMWANLM[[t]][[j]] = p.adjust(result_my$Res$WMWANLM[[t]][[j]], method = "BH")
+#     
+#     result$Res$WMWALNM[[t]][[j]] = p.adjust(result_my[["Res"]][["WMWALNM"]][[t]][[j]], method = "BH")
+#     
+#     result$Res$WMWANL[[t]][[j]] = p.adjust(result_my[["Res"]][["WMWANL"]][[t]][[j]], method = "BH")
+#     
+#     result$Res$WMWALN[[t]][[j]] = p.adjust(result_my[["Res"]][["WMWALN"]][[t]][[j]], method = "BH")
+#     
+#     result$Res$WMWAtrue[[t]][[j]] = p.adjust(result_my[["Res"]][["WMWAtrue"]][[t]][[j]], method = "BH")
+#     
+#     
+#   }
+#   
+#   # saveRDS(result,"WMWAresult_54456_add.rds")
+#   
+# }
+
+
+# golden = NULL
+# golden$DE = DE$DE_gene$monocle
+# golden$notDE = DE$UNDE_gene$monocle
+# golden$DE = DE$DE_gene$MAST
+# golden$notDE = DE$UNDE_gene$MAST
+# golden$DE = DE$DE_gene$scde
+# golden$notDE = DE$UNDE_gene$scde
+
+
+# sigde = DE
+# golden$DE = sigde
+# golden$notDE = setdiff(1:dim(data)[1], sigde)
+
+
+ntest = 1
+sig_score = 0.01
+ngenes = 1:dim(data)[1]
+
+
+
+result$rate1$WMWANLM = matrix(data = NA, nrow = ntimes, ncol = ntest)
+result$rate1$WMWALNM = matrix(data = NA, nrow = ntimes, ncol = ntest)
+result$rate1$WMWANL = matrix(data = NA, nrow = ntimes, ncol = ntest)
+result$rate1$WMWALN = matrix(data = NA, nrow = ntimes, ncol = ntest)
+result$rate1$WMWAtrue = matrix(data = NA, nrow = ntimes, ncol = ntest)
+
+
+result$rate2$WMWANLM = matrix(data = NA, nrow = ntimes, ncol = ntest)
+result$rate2$WMWALNM = matrix(data = NA, nrow = ntimes, ncol = ntest)
+result$rate2$WMWANL = matrix(data = NA, nrow = ntimes, ncol = ntest)
+result$rate2$WMWALN = matrix(data = NA, nrow = ntimes, ncol = ntest)
+result$rate2$WMWAtrue = matrix(data = NA, nrow = ntimes, ncol = ntest)
+
+
+result$rate3$WMWANLM = matrix(data = NA, nrow = ntimes, ncol = ntest)
+result$rate3$WMWALNM = matrix(data = NA, nrow = ntimes, ncol = ntest)
+result$rate3$WMWANL = matrix(data = NA, nrow = ntimes, ncol = ntest)
+result$rate3$WMWALN = matrix(data = NA, nrow = ntimes, ncol = ntest)
+result$rate3$WMWAtrue = matrix(data = NA, nrow = ntimes, ncol = ntest)
+
+
+result$rate4$WMWANLM = matrix(data = NA, nrow = ntimes, ncol = ntest)
+result$rate4$WMWALNM = matrix(data = NA, nrow = ntimes, ncol = ntest)
+result$rate4$WMWANL = matrix(data = NA, nrow = ntimes, ncol = ntest)
+result$rate4$WMWALN = matrix(data = NA, nrow = ntimes, ncol = ntest)
+result$rate4$WMWAtrue = matrix(data = NA, nrow = ntimes, ncol = ntest)
+
+
+result$auc$WMWANLM = matrix(data = NA, nrow = ntimes, ncol = ntest)
+result$auc$WMWALNM = matrix(data = NA, nrow = ntimes, ncol = ntest)
+result$auc$WMWANL = matrix(data = NA, nrow = ntimes, ncol = ntest)
+result$auc$WMWALN = matrix(data = NA, nrow = ntimes, ncol = ntest)
+result$auc$WMWAtrue = matrix(data = NA, nrow = ntimes, ncol = ntest)
+
+
+
+
+
+for (t in 1:ntimes){
+ 
+  
+  result$DE_gene$WMWANLM = list()
+  result$DE_gene$WMWALNM = list()
+  result$DE_gene$WMWANL = list()
+  result$DE_gene$WMWALN = list()
+  result$DE_gene$WMWAtrue = list()
+
+  
+  
+  result$UNDE_gene$WMWANLM = list()
+  result$UNDE_gene$WMWALNM = list()
+  result$UNDE_gene$WMWANL = list()
+  result$UNDE_gene$WMWALN = list()
+  result$UNDE_gene$WMWAtrue = list()
+
+  
+  
+  
+  for (j in 1:ntest){
+    
+    
+    result$DE_gene$WMWANLM <- which(result$Res$WMWANLM[[t]][[j]] < sig_score)
+    result$UNDE_gene$WMWANLM = setdiff(ngenes,result$DE_gene$WMWANLM)
+    result$rate1$WMWANLM[t,j] = DE_Quality_rate1(golden, result$DE_gene$WMWANLM, result$UNDE_gene$WMWANLM)
+    result$rate2$WMWANLM[t,j] = DE_Quality_rate2(golden, result$DE_gene$WMWANLM, result$UNDE_gene$WMWANLM)
+    result$rate3$WMWANLM[t,j] = DE_Quality_rate3(golden, result$DE_gene$WMWANLM, result$UNDE_gene$WMWANLM)
+    result$rate4$WMWANLM[t,j] = DE_Quality_rate4(golden, result$DE_gene$WMWANLM, result$UNDE_gene$WMWANLM)
+    result$auc$WMWANLM[t,j] = DE_Quality_AUC(golden, result$Res$WMWANLM[[t]][[j]])
+    
+    result$DE_gene$WMWALNM <- which(result$Res$WMWALNM[[t]][[j]] < sig_score)
+    result$UNDE_gene$WMWALNM = setdiff(ngenes,result$DE_gene$WMWALNM)
+    result$rate1$WMWALNM[t,j] = DE_Quality_rate1(golden, result$DE_gene$WMWALNM, result$UNDE_gene$WMWALNM)
+    result$rate2$WMWALNM[t,j] = DE_Quality_rate2(golden, result$DE_gene$WMWALNM, result$UNDE_gene$WMWALNM)
+    result$rate3$WMWALNM[t,j] = DE_Quality_rate3(golden, result$DE_gene$WMWALNM, result$UNDE_gene$WMWALNM)
+    result$rate4$WMWALNM[t,j] = DE_Quality_rate4(golden, result$DE_gene$WMWALNM, result$UNDE_gene$WMWALNM)
+    result$auc$WMWALNM[t,j] = DE_Quality_AUC(golden, result$Res$WMWALNM[[t]][[j]])
+    
+    result$DE_gene$WMWANL <- which(result$Res$WMWANL[[t]][[j]] < sig_score)
+    result$UNDE_gene$WMWANL = setdiff(ngenes,result$DE_gene$WMWANL)
+    result$rate1$WMWANL[t,j] = DE_Quality_rate1(golden, result$DE_gene$WMWANL, result$UNDE_gene$WMWANL)
+    result$rate2$WMWANL[t,j] = DE_Quality_rate2(golden, result$DE_gene$WMWANL, result$UNDE_gene$WMWANL)
+    result$rate3$WMWANL[t,j] = DE_Quality_rate3(golden, result$DE_gene$WMWANL, result$UNDE_gene$WMWANL)
+    result$rate4$WMWANL[t,j] = DE_Quality_rate4(golden, result$DE_gene$WMWANL, result$UNDE_gene$WMWANL)
+    result$auc$WMWANL[t, j] = DE_Quality_AUC(golden, result$Res$WMWANL[[t]][[j]])
+    
+    result$DE_gene$WMWALN <- which(result$Res$WMWALN[[t]][[j]] < sig_score)
+    result$UNDE_gene$WMWALN = setdiff(ngenes,result$DE_gene$WMWALN)
+    result$rate1$WMWALN[t,j] = DE_Quality_rate1(golden, result$DE_gene$WMWALN, result$UNDE_gene$WMWALN)
+    result$rate2$WMWALN[t,j] = DE_Quality_rate2(golden, result$DE_gene$WMWALN, result$UNDE_gene$WMWALN)
+    result$rate3$WMWALN[t,j] = DE_Quality_rate3(golden, result$DE_gene$WMWALN, result$UNDE_gene$WMWALN)
+    result$rate4$WMWALN[t,j] = DE_Quality_rate4(golden, result$DE_gene$WMWALN, result$UNDE_gene$WMWALN)
+    result$auc$WMWALN[t, j] = DE_Quality_AUC(golden, result$Res$WMWALN[[t]][[j]])
+    
+    result$DE_gene$WMWAtrue <- which(result$Res$WMWAtrue[[t]][[j]] < sig_score)
+    result$UNDE_gene$WMWAtrue = setdiff(ngenes,result$DE_gene$WMWAtrue)
+    result$rate1$WMWAtrue[t,j] = DE_Quality_rate1(golden, result$DE_gene$WMWAtrue, result$UNDE_gene$WMWAtrue)
+    result$rate2$WMWAtrue[t,j] = DE_Quality_rate2(golden, result$DE_gene$WMWAtrue, result$UNDE_gene$WMWAtrue)
+    result$rate3$WMWAtrue[t,j] = DE_Quality_rate3(golden, result$DE_gene$WMWAtrue, result$UNDE_gene$WMWAtrue)
+    result$rate4$WMWAtrue[t,j] = DE_Quality_rate4(golden, result$DE_gene$WMWAtrue, result$UNDE_gene$WMWAtrue)
+    result$auc$WMWAtrue[t, j] = DE_Quality_AUC(golden, result$Res$WMWAtrue[[t]][[j]])
+    
+    
+  }
+  
+}
+
+saveRDS(result, "result_54456_2.rds")
+
+

@@ -1,0 +1,25 @@
+{
+    "id": "A81C6054",
+    "path": null,
+    "project_path": null,
+    "type": "r_code_browser",
+    "hash": "0",
+    "contents": "",
+    "dirty": false,
+    "created": 1664506740917.0,
+    "source_on_save": false,
+    "relative_order": 7,
+    "properties": {
+        "source_window_id": "",
+        "Source": "Source",
+        "context": ".GlobalEnv:::ziaq_fit"
+    },
+    "folds": "",
+    "lastKnownWriteTime": 1582223930,
+    "encoding": "",
+    "collab_server": "",
+    "source_window": "",
+    "last_content_update": 1664506740917,
+    "read_only": false,
+    "read_only_alternatives": []
+}

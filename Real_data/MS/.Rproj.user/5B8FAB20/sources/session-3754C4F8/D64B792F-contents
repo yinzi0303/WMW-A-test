@@ -1,0 +1,369 @@
+
+
+
+Execute_DEsingle <- function(object, DEsingle.parallel = FALSE){
+  
+  object_DEsingle <- as.matrix(SummarizedExperiment::assay(object, "counts"))
+  results_DEsingle <- DEsingle::DEsingle(counts = object_DEsingle,
+                                         group = factor(object$label),
+                                         parallel = DEsingle.parallel)
+  result_DEsingle_DE <- list(gene_names = row.names(results_DEsingle), pvalue = results_DEsingle$pvalue,
+                             FDR = results_DEsingle$pvalue.adj.FDR)
+  
+  pval=result_DEsingle_DE[["pvalue"]]# results_DEsingle$pvalue.adj.FDR
+  pval = as.data.frame(pval)
+  rownames(pval)=rownames(results_DEsingle)
+  genes = rownames(object@assays@data@listData[["counts"]])
+  a=match(rownames(pval), genes)
+  Dep = data.frame(pval=matrix(1, nrow = length(genes),ncol = 1))
+  Dep[a,1] = results_DEsingle$pvalue
+  return(Dep)
+}
+
+
+# perform zingeR.edgeR
+Execute_zingeR.edgeR <- function(object, maxit.EM = 200){
+  
+  object_zingerR.edgeR <- as.matrix(SummarizedExperiment::assay(object, "counts"))
+  
+  dge <- edgeR::DGEList(round(object_zingerR.edgeR), group = factor(object$label))
+  dge <- edgeR::calcNormFactors(dge)
+  groups <- object$label
+  design <- stats::model.matrix(~groups)
+  weights <- zeroWeightsLS(counts=dge$counts, design=design, maxit = maxit.EM, normalization="TMM")
+  dge$weights <- weights
+  
+  dge = edgeR::estimateDisp(dge, design)
+  fit = edgeR::glmFit(dge, design)
+  lrt = glmWeightedF(fit, coef=2, independentFiltering = TRUE)
+  
+  result_zingerR.edgeR <- list(gene_names = rownames(lrt$table),
+                               pvalue = lrt$table$PValue,
+                               FDR = lrt$table$padjFilter)
+  Dep = result_zingerR.edgeR[["pvalue"]]
+  return(Dep)
+}
+
+
+data_process <- function(Data, group, norm.form = "CPM",  is.normalized = FALSE){
+  options(warn = -1)
+  
+  if(is.normalized){
+    
+    normcounts <- Data
+    gene_df <- data.frame(Gene = rownames(Data))
+    cell_df <- data.frame(cell = colnames(Data))
+    # # pd <- new("AnnotatedDataFrame", data = cell_df)
+    # # fd <- new("AnnotatedDataFrame", data = gene_df)
+    # # transfer <- new("CellDataSet", exprs = as.matrix(Data))
+    # cds <- monocle::newCellDataSet(cellData = Data, expressionFamily = tobit())
+    
+    
+    exp.matrix <- as(as.matrix(Data), 'sparseMatrix')
+    feature_ann <- data.frame(gene_id=rownames(exp.matrix),gene_short_name=rownames(exp.matrix))
+    rownames(feature_ann) <-row.names(Data)
+    fd <- new("AnnotatedDataFrame", data = feature_ann)
+    sample_ann <- data.frame(group=group)
+    rownames(sample_ann) <- colnames(Data)
+    pd <- new("AnnotatedDataFrame", data = sample_ann)
+    cds <- newCellDataSet(exp.matrix, phenoData =pd, featureData =fd, expressionFamily=VGAM::negbinomial.size())
+    
+    # 
+    counts_relative <- monocle::relative2abs(cds)
+    counts_relative <- floor(counts_relative)
+    sce <- SingleCellExperiment::SingleCellExperiment(assays = list(counts = counts_relative, normcounts = normcounts))
+    gene_df <- data.frame(Gene = rownames(sce))
+    cell_df <- data.frame(label = group, cell = colnames(sce))
+    rownames(gene_df) <- gene_df$Gene
+    rownames(cell_df) <- cell_df$cell
+    sce <- SingleCellExperiment::SingleCellExperiment(assays = list(counts = cds, normcounts = normcounts),
+                                                      colData = cell_df,
+                                                      rowData = gene_df)
+    # sce <- scater::calculateQCMetrics(sce)
+  } else
+  {
+    normcounts <- normalized(Data, method = norm.form)
+    sce <- SingleCellExperiment::SingleCellExperiment(assays = list(counts = Data, normcounts = normcounts))
+    gene_df <- data.frame(Gene = rownames(sce))
+    cell_df <- data.frame(label = group, cell = colnames(sce))
+    rownames(gene_df) <- gene_df$Gene
+    rownames(cell_df) <- cell_df$cell
+    sce <- SingleCellExperiment::SingleCellExperiment(assays = list(counts = Data, normcounts = normcounts),
+                                                      colData = cell_df,
+                                                      rowData = gene_df)
+    # sce <- scater::calculateQCMetrics(sce)
+  }
+  
+  return(sce)
+}
+
+
+
+normalized <- function(counts.matrix, method = "CPM"){
+  if(method == "TMM"){
+    norm_factor <- edgeR::calcNormFactors(counts.matrix, method = method)
+    norm.item <- t(t(counts.matrix)/norm_factor)
+    return(norm.item)
+  }
+  if(method == "RLE"){
+    geomeans <- exp(rowMeans(log(counts.matrix)))
+    SF <-function(cnts){
+      stats::median((cnts/geomeans)[is.finite(geomeans) & geomeans >0])
+    }
+    norm_factor <- apply(counts.matrix, 2, SF)
+    norm.item <- t(t(counts.matrix)/norm_factor)
+    return(norm.item)
+  }
+  if(method == "CPM"){
+    # sce <- SingleCellExperiment::SingleCellExperiment(assays = list(counts = counts.matrix))
+    # gene_df <- DataFrame(Gene = rownames(sce))
+    # cell_df <- DataFrame(cell = colnames(sce))
+    # rownames(gene_df) <- gene_df$Gene
+    # rownames(cell_df) <- cell_df$cell
+    # sce <- SingleCellExperiment::SingleCellExperiment(assays = list(counts = counts.matrix),
+    #                                                   colData = cell_df,
+    #                                                   rowData = gene_df)
+    # norm.item <- scater::calculateCPM(sce)
+    norm_factor <- colSums(counts.matrix)
+    norm.item <- t(t(counts.matrix)/norm_factor) * 1e6
+    return(norm.item)
+  }
+  # if(method == "TPM"){
+  #   sce <- SingleCellExperiment::SingleCellExperiment(assays = list(counts = counts.matrix))
+  #   gene_df <- DataFrame(Gene = rownames(sce))
+  #   cell_df <- DataFrame(cell = colnames(sce))
+  #   rownames(gene_df) <- gene_df$Gene
+  #   rownames(cell_df) <- cell_df$cell
+  #   sce <- SingleCellExperiment::SingleCellExperiment(assays = list(counts = counts.matrix),
+  #                                                     colData = cell_df,
+  #                                                     rowData = gene_df)
+  #   norm.item <- scater::calculateTPM(sce, exprs_values = "counts")
+  #   return(norm.item)
+  # }
+}
+
+
+Run_Agg <- function(rawdata, metas){
+  
+  cell_id2 = as.factor(as.vector(colnames(rawdata)) )  #get the cell id from the rawdata
+  gene_id2 = as.factor(rownames(rawdata))   #get the gene id from the rawdata
+  
+  fData = data.frame(primerid = gene_id2)
+  cData = data.frame(wellKey = cell_id2)
+  
+  
+  
+  
+  sca2=SingleCellExperiment(list(counts=rawdata),
+                            colData=data.frame(wellKey=cell_id2),
+                            rowData=data.frame(primerid=gene_id2))
+  
+  # diagnosis = as.factor(metas$diagnosis)
+  # diagnosis2=matrix("1",ncol=1,nrow=length(cell_id2))
+  # diagnosis2[which(diagnosis == "Control")] = "0"
+  # diagnosis= as.factor(diagnosis)
+  
+  # tmp = table(metas$individual)
+  # inds = NULL
+  # 
+  # inds = ref[rep(1, tmp[[1]])]
+  # for (i in 2:length(tmp)){
+  #   inds = c(inds, ref[rep(i, tmp[[i]])])
+  # }
+  
+  
+  colData(sca2)$diagnosis = as.factor(metas$diagnosis)
+  colData(sca2)$ind = as.factor(metas$individual)#as.factor(inds)#
+  colData(sca2)$celltype = as.factor(metas$cluster)
+  
+  # colData(sca2)$diagnosis =as.factor(meta$diagnosis)[1:1314]
+  # colData(sca2)$ind = as.factor(meta$individual)[1:10]
+  # colData(sca2)$cluster = as.factor(meta$cluster)[1:1314]
+  
+  colData(sca2)
+  # aggregateBioVar(scExp = sca2,subjectVar = "ind", cellVar = "celltype")
+  
+  agrBV_pval0=NA
+  agrBV_pval1=NA
+  
+  cell_dds=NA
+  subj_dds=NA
+  
+  
+  #agreBV_pval0: DEseq2.
+  # cell_dds =tryCatch(DESeqDataSetFromMatrix(countData = assay(sca2, "counts"),colData = colData(sca2),design = ~ diagnosis), error = function(e) {NA} )
+  # cell_dds = tryCatch(DESeq(cell_dds), error = function(e) {NA} )
+  # agrBV_pval0 = tryCatch(results(cell_dds)$pvalue, error = function(e) {NA} )
+  
+  #agreBV_pval1: do aggregate and then DEseq2.
+  sca_argBV1 = tryCatch(aggregateBioVar(scExp = sca2,subjectVar = "ind", cellVar = "celltype"), error = function(e) {NA} )
+  # subj_dds =tryCatch(DESeqDataSetFromMatrix(countData = assay(sca_argBV$type1, "counts"),
+  #                                           colData = colData(sca_argBV$type1),design = ~ diagnosis),
+  #                    error = function(e) {NA} )
+  
+  subj_dds =tryCatch(DESeqDataSetFromMatrix(
+    countData = assay(sca_argBV1[[2]], "counts"),
+    colData = colData(sca_argBV1[[2]]),
+    design = ~ diagnosis),
+    error = function(e) {NA} )
+  subj_dds = tryCatch(DESeq(subj_dds), error = function(e) {NA} )
+  
+  agrBV_pval = results(subj_dds)@listData[["pvalue"]]
+  
+  return(agrBV_pval)
+}
+
+###########################################################################################
+
+Run_muscat <- function(rawdata, metas){
+  
+  
+  
+  
+  #construct the format
+  cell_id = colnames(rawdata)   #get the cell id from the rawdata
+  gene_id = rownames(rawdata)   #get the gene id from the rawdata
+  
+  fData = data.frame(primerid = gene_id)
+  cData = data.frame(wellKey = cell_id)
+  
+  
+  sca2=SingleCellExperiment(list(counts=rawdata), 
+                            colData=data.frame(wellKey=cell_id), 
+                            rowData=data.frame(primerid=gene_id))
+  
+  metas$cluster = as.factor(metas$cluster)
+  metas$individual = as.factor(metas$individual)
+  metas$diagnosis = as.factor(metas$diagnosis)
+  colData(sca2)$cluster_id = as.factor(metas$cluster)
+  colData(sca2)$sample_id = as.factor(metas$individual)
+  colData(sca2)$group_id = as.factor(metas$diagnosis)
+  
+  n_cells=table(metas$individual)
+  n_cells=as.numeric(n_cells[match(unique(metas$individual),names(n_cells))])
+  group_id=as.factor(metas$diagnosis[match(unique(metas$individual),metas$individual)])
+  sample_id=as.factor(unique(metas$individual))
+  
+  metadata(sca2)$experiment_info=data.frame(sample_id=sample_id,group_id=group_id,n_cells=n_cells)
+  
+  # test
+  pb2 = aggregateData(sca2,assay = "counts", fun = "sum",by = c("cluster_id", "sample_id"))
+  res1 = pbDS(pb2, verbose = FALSE, method = c("edgeR"), filter = c("both"),min_cells = 0)
+  # res1 = pbDS(pb1, verbose = FALSE, method = c("edgeR"), filter = c("both"),design = design,min_cells = 1)#pbDS(pb1, verbose = FALSE, min_cells = 1)
+  tbl1 = res1$table[[1]]
+  pb_pval1=tryCatch(tbl1[[1]]$p_val, error = function(e) {NA} )
+  names(pb_pval1)=tryCatch(tbl1[[1]]$gene, error = function(e) {NA} )
+  pb_pval1 = as.data.frame(pb_pval1)
+  pval = matrix(data=1,nrow=length(gene_id),ncol=1)
+  rownames(pval) = gene_id
+  pval[match(rownames(pb_pval1), gene_id)] = pb_pval1$pb_pval1
+  
+  return(pval)
+}
+
+
+
+
+
+
+
+
+# source("ziaq.R")
+# source("ziaq_fit.R")
+library(monocle)
+require(edgeR)
+source("zingR.R")
+require(DEsingle)
+
+library(aggregateBioVar)
+library(SummarizedExperiment, quietly = TRUE)
+library(SingleCellExperiment, quietly = TRUE)
+library(DESeq2, quietly = TRUE)
+
+# library(BSDE)
+library(muscat)
+
+######################################################################
+
+########################################################################
+
+dataset = readRDS('GSE54456.rds') #count data, 1410*60
+
+data = dataset[["expr"]]
+label = dataset$label
+
+
+
+num = 100
+Res = list()
+
+
+sig_score = 0.05
+result = list()
+
+n1=c(5,5,5,5,10,15,20,25)
+n2=c(5,10,15,20,10,15,20,25)
+
+
+sig_score = 0.05
+result = list()
+
+
+casesamples = which(label==1)
+contsamples = which(label==2)
+
+for (t in 1:num){
+  
+  result$Res$zingeR[[t]] = list()
+  result$Res$DEsingle[[t]] = list()
+  # result$Res$Agg[[t]] = list()
+  result$Res$muscat[[t]] = list()
+  
+  
+  #length(n1)
+  for (j in 1:length(n1)){
+    
+    sel_1 = sample(casesamples,n1[j])
+    sel_2 = sample(contsamples,n2[j])
+    sel = c(sel_1,sel_2)
+    ex = data[,sel]
+    
+    sml <- c(rep(0,n1[j]),rep(1,n2[j]))
+    sml = as.character(sml)
+    gs <- factor(sml)
+    
+    individual = colnames(ex)
+    cluster = c(rep("spike",n1[j]+n2[j]))
+    diagnosis = c(rep("healthy",n1[j]),rep("disease",n2[j]))
+    metas = data.frame(individual=individual, diagnosis=diagnosis, cluster=cluster)
+    
+    colDat = data.frame(condition = sml)
+    
+    Data <- data_process(Data = ex, group = sml, is.normalized = T)
+    Res_zingeR <- Execute_zingeR.edgeR(Data,  maxit.EM = 200)
+    Res_DEsingle <- Execute_DEsingle(object = Data, DEsingle.parallel = F)
+    # Res_Agg = tryCatch(Run_Agg(rawdata = ex,metas = metas), error = function(e) {NA})
+    Res_muscat = tryCatch(Run_muscat(rawdata = ex, metas = metas), error = function(e) {NA})
+    
+    
+    ####################################################################################
+    
+    
+    # result$Res$ROTS[[t]][[j]] = NULL
+    # result$Res$DESeq[[t]][[j]] = Res_DESeq
+    result$Res$zingeR[[t]][[j]] = Res_zingeR
+    # result$Res$MAST[[t]][[j]] = Res_MAST
+    # result$Res$monocle[[t]][[j]] = Res_monocle
+    # result$Res$edgeR[[t]][[j]] = Res_edgeR
+    result$Res$DEsingle[[t]][[j]] = Res_DEsingle
+    # result$Res$scde[[t]][[j]] = NULL
+    result$Res$muscat[[t]][[j]] = Res_muscat
+    
+  }
+  
+  saveRDS(result,"compresult_54456_nm.rds")
+  
+}
+
+
+
